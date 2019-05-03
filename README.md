@@ -1,8 +1,8 @@
-# Prerequisites
+## Prerequisites
 
 SPIBB-DQN is implemented in Python 3 and requires PyTorch.
 
-# Commands
+## Commands
 
 To generate a dataset, run:
 
