@@ -14,7 +14,7 @@ To train a policy on that dataset, define the training parameters in a yaml file
 
 `ipython train.py -- -o batch True --config config_batch`
 
-To specify different learning types or parameters, either change the `config_batch` file or pass options to the command line, e.g. `--options epsilon_soft 1.5`, or `--options learning_type pi_b`.
+To specify different learning types or parameters, either change the `config_batch` file or pass options to the command line, e.g. `--options learning_type ramdp`, or `--options minimum_count 5`.
 
 We have provided the baseline we used in our experiment in `baseline/dummy_env`. To train a new one, define the training parameters in a yaml file e.g. `config` and then run:
 
