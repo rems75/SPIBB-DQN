@@ -1,0 +1,56 @@
+device: 'cpu'  # make sure using `cuda` on GPU servers
+is_learning: True
+is_testing: True
+test: False
+folder_location: './baseline/'
+folder_name: 'dummy_env'
+network_path: 'weights.pt'
+batch: False
+dataset_path: 'dataset/1000/123/1_0/counts_dataset.pkl'
+baseline_path: 'weights.pt'
+
+seed: 123
+dataset_size: 1000
+
+# Parameters of the environment set to the ones used in the experiment
+domain: 'dummy'
+dummy_time_step: 0.1
+dummy_size: 3
+dummy_a_max: 1
+dummy_v_max: 1
+dummy_noise: 0.025
+dummy_noise_v: 0.05
+noise_factor: 1
+dummy_log: False
+
+num_experiments: 1
+num_epochs: 20
+passes_on_dataset: 2000
+steps_per_test: 10000
+episode_max_len: 100
+max_start_nullops: 0
+steps_per_epoch: 10000
+extra_stochasticity: 0.
+
+epsilon: 1
+annealing: True
+final_epsilon: 0
+test_epsilon: 0
+annealing_start: 0
+annealing_steps: 2000000
+
+ddqn: True
+network_size: 'dense'  # `large`=nips paper model, `nature`=nature paper model
+gamma: .9
+learning_rate: 0.01
+minibatch_size: 32
+update_freq: 10
+state_shape: [4]
+nb_actions: 9
+history_len: 1
+replay_max_size: 1000000
+replay_min_size: 1
+learning_frequency: 10
+action_dim: 1
+reward_dim: 1
+normalize: 1.
