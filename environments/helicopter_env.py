@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import sys
 
 
-class dummy_state():
+class helicopter_state():
 	def __init__(self, x = -1, y = -1, vx = -1, vy= -1):
 		self.x = x
 		self.y = y
@@ -17,7 +17,7 @@ class dummy_state():
 		print('state = (' + str(self.x) + ', ' + str(self.y) + ', ' + str(self.vx) + ', ' + str(self.vy) + ')')
 
 
-class dummy_action():
+class helicopter_action():
 	def __init__(self, ax=0, ay=0, rand=False, fromint=False):
 		if rand:
 			self.ax = np.random.randint(3) - 1
@@ -29,14 +29,14 @@ class dummy_action():
 			self.ax = ax
 			self.ay = ay
 
-	def dummy_action_to_int(self):
+	def helicopter_action_to_int(self):
 		return (self.ax + 1)*3 + self.ay + 1
 
 	def print(self):
 		print('action = (' + str(self.ax) + ', ' + str(self.ay) + ')')
 
 
-class dummy_env():
+class helicopter_env():
 	def __init__(self, time_step=0.1, size=10, noise=0.025, noise_v=0.05, v_max=1, a_max=1, log=False,
 							 episode_max_len=100, seed=123, noise_factor=1):
 
@@ -61,7 +61,7 @@ class dummy_env():
 
 	def reset(self):
 		# initialize the starting state: [x(0), y(0), v_x(0), v_y(0)]
-		s_0 = dummy_state(np.random.rand()/self.size, np.random.rand()/self.size, 2*np.random.rand()-1, 2*np.random.rand()-1)
+		s_0 = helicopter_state(np.random.rand()/self.size, np.random.rand()/self.size, 2*np.random.rand()-1, 2*np.random.rand()-1)
 		# sys.stdout.write('state = (' + str(s_0.x) + ', ' + str(s_0.y) + ', ' + str(s_0.vx) + ', ' + str(s_0.vy) + ') ')
 		# sys.stdout.write('state = ({:.2f}, {:.2f}, {:.2f}, {:.2f}) '.format(
 		# 	s_0.x, s_0.y, s_0.vx, s_0.vy))
@@ -71,7 +71,7 @@ class dummy_env():
 		return self.get_state()
 
 	def step(self, action):
-		a = dummy_action(ax=action, fromint=True)
+		a = helicopter_action(ax=action, fromint=True)
 		self.current_state, r, term = self.transition(self.current_state, a)
 		# if term:
 		# 	print(' ; ' + str(r), end='', flush=True)
@@ -81,7 +81,7 @@ class dummy_env():
 		return self.current_state.tovec()
 
 	def transition(self, s, a):
-		sp = dummy_state()
+		sp = helicopter_state()
 		sp.x = s.x + s.vx*self.time_step*self.v_max + 0.5*a.ax*np.abs(a.ax)*(self.a_max*self.time_step)**2 + np.random.normal(0, self.noise)
 		sp.y = s.y + s.vy*self.time_step*self.v_max + 0.5*a.ay*np.abs(a.ay)*(self.a_max*self.time_step)**2 + np.random.normal(0, self.noise)
 		sp.vx = s.vx + a.ax*self.a_max*self.time_step + np.random.normal(0, self.noise_v)

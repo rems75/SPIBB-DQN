@@ -23,11 +23,11 @@ class Environment():
               repeat_action_probability=params['repeat_action_probability'], state_shape=params['state_shape'],
               rom_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), params['rom_path']),
               game_name=params['game_name'], rendering=params['test'], random_state=random_state)
-    elif domain == 'dummy':
-      from environments.dummy_env import dummy_env
-      self.env = dummy_env(time_step = params['dummy_time_step'], size = params['dummy_size'], a_max = params['dummy_a_max'],
-              v_max = params['dummy_v_max'], noise = params['dummy_noise'], noise_v = params['dummy_noise_v'],
-              log = params['dummy_log'], episode_max_len=params['episode_max_len'], seed=params['seed'],
+    elif domain == 'helicopter':
+      from environments.helicopter_env import helicopter_env
+      self.env = helicopter_env(time_step = params['helicopter_time_step'], size = params['helicopter_size'], a_max = params['helicopter_a_max'],
+              v_max = params['helicopter_v_max'], noise = params['helicopter_noise'], noise_v = params['helicopter_noise_v'],
+              log = params['helicopter_log'], episode_max_len=params['episode_max_len'], seed=params['seed'],
               noise_factor=params['noise_factor'])
     elif domain == 'gym':
       import gym

@@ -1,63 +1,59 @@
+game_name: 'CartPole-v0'
 device: 'cpu'  # make sure to use `cuda` on GPU servers
 is_learning: True
 is_testing: True
 test: False
 folder_location: './baseline/'
-folder_name: 'helicopter_env_test'
-network_path: 'weights.pt'
+domain: 'gym'
+folder_name: 'cartpole_env'
+network_path: 'weights_new.pt'
 batch: False
+dataset_path: 'dataset/10000/123/1_0/counts_dataset.pkl'
+baseline_path: 'weights.pt'
 
 seed: 123
 dataset_size: 1000
 
-# learning_type should be regular to train a baseline
-learning_type: 'regular'
+# learning_type can be regular, pi_b (ie SPIBB-DQN), soft_sort (ie Soft-SPIBB-DQN) or ramdp
+learning_type: 'pi_b'
 # minimum_count corresponds to n_wedge in the paper. Set to 0 for vanilla DQN.
-minimum_count: 0.0
+minimum_count: 10.0
 # epsilon_count is the epsilon value used for soft spibb
 epsilon_soft: 1.0
 # kappa corresponds to the kappa parameter in ramdp. Set to 0 for vanilla DQN.
 kappa: 0.003
-
-# Parameters of the environment set to the ones used in the experiment
-domain: 'helicopter'
-helicopter_time_step: 0.1
-helicopter_size: 3
-helicopter_a_max: 1
-helicopter_v_max: 1
-helicopter_noise: 0.025
-helicopter_noise_v: 0.05
-noise_factor: 1
-helicopter_log: False
+baseline_temp: 0.2
+count_param: 0.2
 
 num_experiments: 1
-num_epochs: 20
+num_epochs: 30
 passes_on_dataset: 2000
-steps_per_test: 10000
-episode_max_len: 100
+steps_per_test: 20000
+episode_max_len: 200
 max_start_nullops: 0
-steps_per_epoch: 10000
+steps_per_epoch: 3000
 extra_stochasticity: 0.
 
 epsilon: 1
 annealing: True
-final_epsilon: 0
+final_epsilon: 0.01
 test_epsilon: 0
 annealing_start: 0
-annealing_steps: 2000000
+annealing_steps: 100000
 
 ddqn: True
 network_size: 'dense'  # `large`=nips paper model, `nature`=nature paper model
+# network_size: 'small_dense'  # `large`=nips paper model, `nature`=nature paper model
 gamma: .9
-learning_rate: 0.01
+learning_rate: 0.00025
 minibatch_size: 32
-update_freq: 10
+update_freq: 1000
 state_shape: [4]
-nb_actions: 9
+nb_actions: 2
 history_len: 1
 replay_max_size: 1000000
 replay_min_size: 1
-learning_frequency: 10
+learning_frequency: 1
 action_dim: 1
 reward_dim: 1
 normalize: 1.

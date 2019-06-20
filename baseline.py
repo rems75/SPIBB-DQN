@@ -289,7 +289,7 @@ if __name__ == '__main__':
   parser.add_argument('baseline_dir', type=str, default='baseline', help='path of the baseline')
   parser.add_argument('baseline_name', type=str, default='weights.pt', help='file containing the baseline')
   parser.add_argument('--seed', type=int, default=123, help='random seed')
-  parser.add_argument('--temperature', type=float, default=0.3, help='temperature used for the soft q-values')
+  parser.add_argument('--temperature', type=float, default=0.1, help='temperature used for the soft q-values')
   parser.add_argument('--device', type=str, default='cpu', help='cpu or gpu')
 
   # Arguments for baseline evaluation

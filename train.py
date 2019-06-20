@@ -13,7 +13,7 @@ from dataset import Dataset_Counts
 from environments import environment
 
 @click.command()
-@click.option('--domain', '-d', default='dummy', help="'dummy' or 'catch' or 'atari'")
+@click.option('--domain', '-d', default='helicopter', help="'helicopter' or 'catch' or 'atari'")
 @click.option('--config', '-c', default=None, help="config file name, if not specified, config_\{domain\}")
 @click.option('--options', '-o', multiple=True, nargs=2, type=click.Tuple([str, str]))
 def run(domain, config, options):

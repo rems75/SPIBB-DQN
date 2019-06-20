@@ -1,9 +1,9 @@
-device: 'cpu'  # make sure using `cuda` on GPU servers
+device: 'cpu'  # make sure to use `cuda` on GPU servers
 is_learning: True
 is_testing: True
 test: False
 folder_location: './baseline/'
-folder_name: 'dummy_env'
+folder_name: 'helicopter_env'
 network_path: 'weights.pt'
 batch: False
 dataset_path: 'dataset/1000/123/1_0/counts_dataset.pkl'
@@ -12,7 +12,7 @@ baseline_path: 'weights.pt'
 seed: 123
 dataset_size: 1000
 
-# learning_type can be regular, pi_b or ramdp
+# learning_type can be regular, pi_b (ie SPIBB-DQN), soft_sort (ie Soft-SPIBB-DQN) or ramdp
 learning_type: 'pi_b'
 # minimum_count corresponds to n_wedge in the paper. Set to 0 for vanilla DQN.
 minimum_count: 10.0
@@ -22,15 +22,15 @@ epsilon_soft: 1.0
 kappa: 0.003
 
 # Parameters of the environment set to the ones used in the experiment
-domain: 'dummy'
-dummy_time_step: 0.1
-dummy_size: 3
-dummy_a_max: 1
-dummy_v_max: 1
-dummy_noise: 0.025
-dummy_noise_v: 0.05
+domain: 'helicopter'
+helicopter_time_step: 0.1
+helicopter_size: 3
+helicopter_a_max: 1
+helicopter_v_max: 1
+helicopter_noise: 0.025
+helicopter_noise_v: 0.05
 noise_factor: 1
-dummy_log: False
+helicopter_log: False
 baseline_temp: 0.1
 count_param: 0.2
 

@@ -199,11 +199,11 @@ class BatchExperiment(object):
 
   def do_epochs(self, number_of_epochs=1, steps_per_test=10000, exp_id=0, passes_on_dataset=1, **kwargs):
     if self.ai.learning_type == 'soft_sort':
-      filename = os.path.join(self.folder_name, "{}_{}.csv".format(exp_id, self.ai.epsilon_soft))
+      filename = os.path.join(self.folder_name, "soft_{}_{}.csv".format(exp_id, self.ai.epsilon_soft))
     elif self.ai.learning_type == 'ramdp':
-      filename = os.path.join(self.folder_name, "{}_{:.2f}.csv".format(exp_id, self.ai.kappa))
+      filename = os.path.join(self.folder_name, "ramdp_{}_{:.2f}.csv".format(exp_id, self.ai.kappa))
     else:
-      filename = os.path.join(self.folder_name, "{}_{}.csv".format(exp_id, self.ai.minimum_count))
+      filename = os.path.join(self.folder_name, "spibb_{}_{}.csv".format(exp_id, self.ai.minimum_count))
     try:
       os.remove(filename)
     except OSError:
