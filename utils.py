@@ -16,22 +16,22 @@ logger = logging.getLogger(__name__)
 
 
 def distance(x1, x2):
-  return np.linalg.norm(x1-x2)
+    return np.linalg.norm(x1-x2)
 
 
 def similarite(x1, x2, param, weights=None):
-  return max(0, 1 - distance(x1, x2) / param)
+    return max(0, 1 - distance(x1, x2) / param)
 
 
 def softmax(x, temperature=1.0, axis=0):
-  """Compute softmax values for each sets of scores in x."""
-  if temperature > 0:
-    e_x = np.exp((x - np.max(x)) / temperature)
-    return e_x / e_x.sum(axis=axis)
-  else:
-    e_x = np.zeros(x.shape)
-    e_x[np.argmax(x)] = 1.0
-    return e_x
+    """Compute softmax values for each sets of scores in x."""
+    if temperature > 0:
+        e_x = np.exp((x - np.max(x)) / temperature)
+        return e_x / e_x.sum(axis=axis)
+    else:
+        e_x = np.zeros(x.shape)
+        e_x[np.argmax(x)] = 1.0
+        return e_x
 
 
 def human_evaluation(env, agent, human_trajectories, use_soc_state=True):
