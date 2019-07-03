@@ -1,20 +1,6 @@
 import numpy as np
 import pickle
 import os
-import sys
-import time
-from scipy import misc
-
-
-class Transition(object):
-
-    def __init__(self, s, a, r, ss, t):
-
-        self.state = s
-        self.action = a
-        self.reward = r
-        self.next_state = ss
-        self.terminal = t
 
 
 class DataSet(object):
@@ -120,7 +106,7 @@ class Dataset_Counts(object):
         return np.linalg.norm(x1-x2)
 
     @staticmethod
-    def similarite(x1, x2, param, mean, std):
+    def similarity(x1, x2, param, mean, std):
         return max(0, 1 - Dataset_Counts.distance(x1, x2) / param)
 
     def sample(self, batch_size=1):
@@ -145,6 +131,6 @@ class Dataset_Counts(object):
     def compute_counts(self, state):
         counts = np.zeros(self.nb_actions)
         for j in range(self.dataset_size):
-            s = Dataset_Counts.similarite(state, self.data['s'][j], self.param, self.mean, self.std)
+            s = Dataset_Counts.similarity(state, self.data['s'][j], self.param, self.mean, self.std)
             counts[self.data['a'][j]] += s
         return counts

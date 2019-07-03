@@ -4,23 +4,12 @@ Utilities
 
 import logging
 import numpy as np
-from hashlib import sha1
 import pandas as pd
-import sys
-# import matplotlib as mpl
-# mpl.use('Agg')
-# import matplotlib.pyplot as plt
 
 
 logger = logging.getLogger(__name__)
 
 
-def distance(x1, x2):
-    return np.linalg.norm(x1-x2)
-
-
-def similarite(x1, x2, param, weights=None):
-    return max(0, 1 - distance(x1, x2) / param)
 
 
 def softmax(x, temperature=1.0, axis=0):
@@ -79,6 +68,14 @@ class Font:
 
 
 class ExperienceReplay(object):
+    """
+    maintains a batch of max_size past experiences
+
+    if a new experience is added and the dataset is full it deletes the oldest experience
+
+    it also handles the concatenation of history_len observations
+    """
+
     def __init__(self, max_size=100, history_len=1, state_shape=None, action_dim=1, reward_dim=1, state_dtype=np.float32):
         self.size = 0
         self.head = 0

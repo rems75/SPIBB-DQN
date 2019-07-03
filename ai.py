@@ -2,9 +2,7 @@ import numpy as np
 from utils import ExperienceReplay
 from model import SmallDenseNetwork, DenseNetwork, Network, LargeNetwork, NatureNetwork
 import torch
-import torch.nn as nn
 import torch.optim as optim
-import sys
 
 
 # Upper bound on q-values. Just used as an artefact
@@ -99,6 +97,18 @@ class AI(object):
         self.optimizer.step()
 
     def _train_on_batch(self, s, a, r, s2, t, c, pi_b, c1):
+        """
+
+        :param s: current states
+        :param a: actions
+        :param r: rewards
+        :param s2: next states
+        :param t: terminal signals (indicate end of trajectory)
+        :param c: state-action visits
+        :param pi_b: baseline policy pi_b(a|s)
+        :param c1: state visits
+        :return: loss
+        """
 
         s = torch.FloatTensor(s).to(self.device)
         s2 = torch.FloatTensor(s2).to(self.device)
@@ -131,20 +141,23 @@ class AI(object):
             # State/action counts for state s1 (used for RaMDP)
             q2_max, _ = _get_q2max()
             c1 = torch.FloatTensor(c1).to(self.device)
-            return r - self.kappa / torch.sqrt(c1) +  (1 - t) * self.gamma * q2_max
+            return r - self.kappa / torch.sqrt(c1) + (1 - t) * self.gamma * q2_max
 
-        def _get_bellman_target_pi_b(c, pi_b):
+        def _get_bellman_target_pi_b(c, pi_b_):
             # All state/action counts for state s2
             c = torch.FloatTensor(c).to(self.device)
             # Policy on state s2 (estimated using softmax on the q-values)
-            pi_b = torch.FloatTensor(pi_b).to(self.device)
+            pi_b_ = torch.FloatTensor(pi_b_).to(self.device)
             # Mask for "bootstrapped actions"
-            mask = (c >= self.minimum_count).float()
+            mask_non_bootstrapped = (c >= self.minimum_count).float()
+            # print("mask_non_bootstrapped %d, bootstrapped: %d" % ((c >= self.minimum_count).float().sum(), (c < self.minimum_count).float().sum()))
             # r + (1 - t) * gamma * max_{a s.t. (s',a) not in B}(Q'(s',a)) * proba(actions not in B)
             #   + (1 - t) * gamma * sum(proba(a') Q'(s',a'))
-            q2_max, _ = _get_q2max(mask)
-            return r + (1 - t) * self.gamma * \
-                (q2_max * torch.sum(pi_b*mask, 1) + torch.sum(q2 * pi_b * (1-mask), 1))
+            q2_max, _ = _get_q2max(mask_non_bootstrapped)
+            # (1 - t): if terminal state does not add expected future reward
+            return r + (1 - t) * self.gamma * (
+                    q2_max * torch.sum(pi_b_ * mask_non_bootstrapped, 1)  # prob mass of non_bootstrapped (s,a) pairs
+                    + torch.sum(q2 * pi_b_ * (1 - mask_non_bootstrapped), 1))  # prob mass of bootstrapped (s,a) pairs
 
         def _get_bellman_target_soft_sort(c, pi_b):
             # All state/action counts for state s2
@@ -178,11 +191,15 @@ class AI(object):
 
         if self.learning_type == 'ramdp':
             bellman_target = _get_bellman_target_ramdp(c1)
-        elif self.learning_type == 'regular' or self.minimum_count == 0:
+        elif self.learning_type == 'regular' or self.minimum_count == 0: # shouldn't minimum_count be used in the
         # elif self.learning_type == 'regular':
             bellman_target = _get_bellman_target_dqn()
         elif self.learning_type == 'pi_b':
             bellman_target = _get_bellman_target_pi_b(c, pi_b)
+        elif self.learning_type == 'pi_b_hat':
+            pi_b_hat = c / c1[:, np.newaxis]
+            # print(np.mean(pi_b_hat - pi_b), np.std(pi_b_hat - pi_b))
+            bellman_target = _get_bellman_target_pi_b(c, pi_b_hat)
         elif self.learning_type == 'soft_sort':
             bellman_target = _get_bellman_target_soft_sort(c, pi_b)
         else:
@@ -204,11 +221,25 @@ class AI(object):
         return self.network(state / self.normalize).detach().cpu().numpy()
 
     def get_max_action(self, states, counts=[]):
+        """
+
+        :param states:
+        :param counts: number of times each action was taken in the given state
+        :return: action
+        """
         states = np.expand_dims(states, 0)
         q_values = self.get_q(states)[0][0]
-        if self.learning_type == 'pi_b' and self.minimum_count > 0.0:
+        if self.learning_type in ['pi_b', 'pi_b_hat'] and self.minimum_count > 0.0:
             mask = (counts < self.minimum_count)
-            _, _, policy, _ = self.baseline.inference(states[0])
+            if self.learning_type == 'pi_b':
+                _, _, policy, _ = self.baseline.inference(states[0])
+            elif self.learning_type == 'pi_b_hat':
+                # estimate policy according to visits counter
+                total_state_visits = counts.sum()
+                if total_state_visits > 0:
+                    policy = counts/counts.sum()
+                else:
+                    policy = np.ones(self.nb_actions) / self.nb_actions
             pi_b = np.multiply(mask, policy)
             pi_b[np.argmax(q_values - mask*MAX_Q)] += np.maximum(0, 1 - np.sum(pi_b))
             pi_b /= np.sum(pi_b)
@@ -269,6 +300,11 @@ class AI(object):
         return objective
 
     def anneal_eps(self, step):
+        """
+        reduce the probability of taking random actions
+        :param step:
+        :return:
+        """
         if self.epsilon > self.final_epsilon:
             decay = (self.start_epsilon - self.final_epsilon) * step / self.decay_steps
             self.epsilon = self.start_epsilon - decay
@@ -280,8 +316,9 @@ class AI(object):
         for g in self.optimizer.param_groups:
             g['lr'] = self.learning_rate
 
-    def update_eps(self, epoch):
-        self.epsilon = self.start_epsilon / (epoch + 2)
+    # TODO: remove this method is not used
+    # def update_eps(self, epoch):
+    #     self.epsilon = self.start_epsilon / (epoch + 2)
 
     def dump_network(self, weights_file_path):
         torch.save(self.network.state_dict(), weights_file_path)

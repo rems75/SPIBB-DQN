@@ -5,6 +5,10 @@ floatX = 'float32'
 
 
 def init_weights(m):
+    """
+    initializes the weights of the given module using a uniform distribution
+    sets all the bias parameters to 0
+    """
     if type(m) in [nn.Linear, nn.Conv2d]:
         torch.nn.init.kaiming_uniform_(m.weight)
         m.bias.data.fill_(0.)

@@ -1,6 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
-import sys
 
 
 class helicopter_state():

@@ -2,8 +2,6 @@ import click
 import numpy as np
 import os
 import pickle
-import random
-import sys
 import torch
 import yaml
 

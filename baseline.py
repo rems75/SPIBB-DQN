@@ -1,15 +1,13 @@
 import argparse
-import glob
 import numpy as np
 import os
 import pickle
-import sys
 import time
 import torch
 import yaml
 
 from dataset import DataSet, Dataset_Counts
-from utils import distance, similarite, softmax
+from utils import softmax
 from model import SmallDenseNetwork, DenseNetwork, Network, LargeNetwork, NatureNetwork
 from environments import environment
 
@@ -227,7 +225,7 @@ def compute_counts(dataset, overwrite=False, param = 0.2):
         data['r'][i] = dataset.rewards[i]
         for j in range(len(dataset.states)-1):
             if dataset.actions[i] == dataset.actions[j]:
-                s = Dataset_Counts.similarite(dataset.states[i], dataset.states[j], param, mean, std)
+                s = Dataset_Counts.similarity(dataset.states[i], dataset.states[j], param, mean, std)
                 data['c1'][i] += s
         if dataset.terms[i]:
             data['t'][i] = True
@@ -236,7 +234,8 @@ def compute_counts(dataset, overwrite=False, param = 0.2):
             data['p'][i] = dataset.policy[i+1]
             data['q'][i] = dataset.qfunction[i+1]
             for j in range(len(dataset.states)-1):
-                s = Dataset_Counts.similarite(dataset.states[i+1], dataset.states[j], param, mean, std)
+                s = Dataset_Counts.similarity(dataset.states[i + 1], dataset.states[j], param, mean, std)
+                # increments the similarity with state action pair
                 data['c'][i, dataset.actions[j]] += s
 
     print("Saving data with counts to {}".format(full_path), flush=True)
@@ -308,7 +307,7 @@ if __name__ == '__main__':
     parser.add_argument('--extra_stochasticity', type=float, default=0.0,
                         help='additional noise in the actions')
     parser.add_argument('--param', type=float, default=0.2,
-                        help='param for similarite')
+                        help='param for similarity')
     parser.add_argument('--dataset_dir', type=str, default='dataset',
                         help='path where to save the dataset')
     parser.add_argument('--overwrite', action="store_true",

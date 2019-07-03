@@ -23,7 +23,7 @@ class DQNExperiment(object):
         self.env = env
         self.ai = ai
         self.history_len = history_len
-        self.annealing = annealing
+        # self.annealing = annealing  # TODO: remove, this is never used
         self.test_epsilon = test_epsilon
         self.max_start_nullops = max_start_nullops
         self.saving_period = saving_period  # after each `saving_period` epochs, the results so far will be saved.
@@ -202,8 +202,14 @@ class BatchExperiment(object):
             filename = os.path.join(self.folder_name, "soft_{}_{}.csv".format(exp_id, self.ai.epsilon_soft))
         elif self.ai.learning_type == 'ramdp':
             filename = os.path.join(self.folder_name, "ramdp_{}_{:.2f}.csv".format(exp_id, self.ai.kappa))
-        else:
+        elif self.ai.learning_type == 'pi_b':
             filename = os.path.join(self.folder_name, "spibb_{}_{}.csv".format(exp_id, self.ai.minimum_count))
+        elif self.ai.learning_type == 'pi_b_hat':
+            filename = os.path.join(self.folder_name, "spibb_hat_{}_{}.csv".format(exp_id, self.ai.minimum_count))
+        elif self.ai.learning_type == 'regular':
+            filename = os.path.join(self.folder_name, "dqn_{}.csv".format(exp_id))
+        else:
+            raise ValueError()
         try:
             os.remove(filename)
         except OSError:
