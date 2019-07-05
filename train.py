@@ -9,6 +9,7 @@ from ai import AI
 from experiment import DQNExperiment, BatchExperiment
 from dataset import Dataset_Counts
 from environments import environment
+from baseline import Baseline
 
 @click.command()
 @click.option('--domain', '-d', default='helicopter', help="'helicopter' or 'catch' or 'atari'")
@@ -48,7 +49,6 @@ def run(domain, config, options):
     env = environment.Environment(domain, params, random_state)
 
     if params['batch']:
-        from baseline import Baseline
         baseline_path = os.path.join(DATA_DIR, params['baseline_path'])
         baseline = Baseline(baseline_path, params['network_size'], state_shape=params['state_shape'],
                             nb_actions=params['nb_actions'], seed=params['seed'], temperature=params['baseline_temp'],
@@ -60,10 +60,10 @@ def run(domain, config, options):
             raise ValueError("The dataset file does not exist")
         with open(dataset_path, "rb") as f:
             data = pickle.load(f)
-        dataset = Dataset_Counts(data, params['count_param'])
+        dataset = Dataset_Counts.from_data(data, params['count_param'])
         print("Data with counts loaded: {} samples".format(len(data['s'])), flush=True)
         folder_name = os.path.dirname(dataset_path)
-        expt = BatchExperiment(dataset=dataset, env=env, folder_name= folder_name, episode_max_len=params['episode_max_len'],
+        expt = BatchExperiment(dataset=dataset, env=env, folder_name=folder_name, episode_max_len=params['episode_max_len'],
                                minimum_count=params['minimum_count'], extra_stochasticity=params['extra_stochasticity'],
                                history_len=params['history_len'], max_start_nullops=params['max_start_nullops'])
 
@@ -96,6 +96,11 @@ def run(domain, config, options):
                 network_size=params['network_size'], normalize=params['normalize'], device=device,
                 kappa=params['kappa'], minimum_count=params['minimum_count'], epsilon_soft=params['epsilon_soft'])
         expt.ai = ai
+        if not params['batch']:
+            # resets dataset for online experiment
+            expt.dataset_counter = Dataset_Counts(count_param=params['count_param'],
+                                                  state_shape=env.state_shape,
+                                                  nb_actions=env.nb_actions)
 
         env.reset()
         with open(expt.folder_name + '/config.yaml', 'w') as y:

@@ -181,7 +181,7 @@ class Baseline(object):
                 np.mean(all_rewards[:int(number_of_epochs/100)])), flush=True)
 
 
-def compute_counts(dataset, overwrite=False, param = 0.2):
+def compute_counts(dataset, overwrite=False, count_param = 0.2):
     """ Compute the pseudo-counts for each state-action pair present in the dataset following the methodology described in the paper.
 
     Args:
@@ -225,7 +225,7 @@ def compute_counts(dataset, overwrite=False, param = 0.2):
         data['r'][i] = dataset.rewards[i]
         for j in range(len(dataset.states)-1):
             if dataset.actions[i] == dataset.actions[j]:
-                s = Dataset_Counts.similarity(dataset.states[i], dataset.states[j], param, mean, std)
+                s = Dataset_Counts.similarity(dataset.states[i], dataset.states[j], count_param, mean, std)
                 data['c1'][i] += s
         if dataset.terms[i]:
             data['t'][i] = True
@@ -234,7 +234,7 @@ def compute_counts(dataset, overwrite=False, param = 0.2):
             data['p'][i] = dataset.policy[i+1]
             data['q'][i] = dataset.qfunction[i+1]
             for j in range(len(dataset.states)-1):
-                s = Dataset_Counts.similarity(dataset.states[i + 1], dataset.states[j], param, mean, std)
+                s = Dataset_Counts.similarity(dataset.states[i + 1], dataset.states[j], count_param, mean, std)
                 # increments the similarity with state action pair
                 data['c'][i, dataset.actions[j]] += s
 
@@ -279,7 +279,7 @@ def run(args):
         env, os.path.join(args.baseline_dir, args.dataset_dir), params, dataset_size=args.dataset_size,
         overwrite=args.overwrite, noise_factor=args.noise_factor)
 
-    compute_counts(dataset, overwrite=args.overwrite, param=args.param)
+    compute_counts(dataset, overwrite=args.overwrite, count_param=args.count_param)
 
 
 if __name__ == '__main__':
@@ -306,7 +306,7 @@ if __name__ == '__main__':
                         help='amount of noise in the environment')
     parser.add_argument('--extra_stochasticity', type=float, default=0.0,
                         help='additional noise in the actions')
-    parser.add_argument('--param', type=float, default=0.2,
+    parser.add_argument('--count_param', type=float, default=0.2,
                         help='param for similarity')
     parser.add_argument('--dataset_dir', type=str, default='dataset',
                         help='path where to save the dataset')

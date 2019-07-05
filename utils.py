@@ -34,7 +34,7 @@ def human_evaluation(env, agent, human_trajectories, use_soc_state=True):
         agent_reward = 0 # NOT  including reward accumulated along human trajectory
         s = env.get_soc_state() if use_soc_state else env.get_pixel_state()
         while not terminal:
-            action = agent.get_action(s, evaluate=True)
+            action, policy = agent.get_action_and_policy(s, evaluate=True)
             pixel_state, r, terminal, soc_state = env.act(action)
             s = soc_state if use_soc_state else pixel_state
             agent_reward += r

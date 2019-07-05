@@ -47,7 +47,12 @@ class AI(object):
         self.optimizer = optim.RMSprop(self.network.parameters(), lr=self.learning_rate, alpha=0.95, eps=1e-07)
 
         # SPIBB parameters
-        self.baseline = baseline
+        if baseline is not None:
+            self.baseline = baseline
+        else:
+            self.baseline = self._build_network()
+            self.weight_transfer(from_model=self.network, to_model=self.baseline)
+
         self.learning_type = learning_type
         self.kappa = kappa
         self.minimum_count = minimum_count
@@ -67,37 +72,9 @@ class AI(object):
         else:
             raise ValueError('Invalid network_size.')
 
-    def train_on_batch(self, s, a, r, s2, t):
-        s = torch.FloatTensor(s).to(self.device)
-        s2 = torch.FloatTensor(s2).to(self.device)
-        a = torch.LongTensor(a).to(self.device)
-        r = torch.FloatTensor(r).to(self.device)
-        t = torch.FloatTensor(np.float32(t)).to(self.device)
-
-        # Squeeze dimensions for history_len = 1
-        s = torch.squeeze(s)
-        s2 = torch.squeeze(s2)
-        q = self.network(s / self.normalize)
-        q2 = self.target_network(s2 / self.normalize).detach()
-        q_pred = q.gather(1, a.unsqueeze(1)).squeeze(1)
-        if self.ddqn:
-            q2_net = self.network(s2 / self.normalize).detach()
-            q2_max = q2.gather(1, torch.max(q2_net, 1)[1].unsqueeze(1)).squeeze(1)
-        else:
-            q2_max = torch.max(q2, 1)[0]
-        bellman_target = r + self.gamma * q2_max * (1 - t)
-
-        errs = (bellman_target - q_pred).unsqueeze(1)
-        quad = torch.min(torch.abs(errs), 1)[0]
-        lin = torch.abs(errs) - quad
-        loss = torch.sum(0.5 * quad.pow(2) + lin)
-
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-
-    def _train_on_batch(self, s, a, r, s2, t, c, pi_b, c1):
+    def train_on_batch(self, s, a, r, s2, t, c=None, pi_b=None, c1=None):
         """
+        each parameter is a list containing past experiences
 
         :param s: current states
         :param a: actions
@@ -109,7 +86,6 @@ class AI(object):
         :param c1: state visits
         :return: loss
         """
-
         s = torch.FloatTensor(s).to(self.device)
         s2 = torch.FloatTensor(s2).to(self.device)
         a = torch.LongTensor(a).to(self.device)
@@ -125,7 +101,8 @@ class AI(object):
 
         def _get_q2max(mask=None):
             if mask is None:
-                mask = torch.FloatTensor(np.ones(c.shape)).to(self.device)
+                mask = torch.FloatTensor(np.ones(list(a.shape) + [self.nb_actions])).to(self.device)
+                # mask = torch.FloatTensor(np.ones(c.shape)).to(self.device)
             if self.ddqn:
                 q2_net = self.network(s2 / self.normalize).detach()
                 a_max = torch.max(q2_net - (1-mask)*MAX_Q, 1)[1].unsqueeze(1)
@@ -205,7 +182,6 @@ class AI(object):
         else:
             raise ValueError('We did not recognize that learning type')
 
-        # Huber loss
         errs = (bellman_target - q_pred).unsqueeze(1)
         quad = torch.min(torch.abs(errs), 1)[0]
         lin = torch.abs(errs) - quad
@@ -214,13 +190,12 @@ class AI(object):
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-        return loss
 
     def get_q(self, state):
         state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
         return self.network(state / self.normalize).detach().cpu().numpy()
 
-    def get_max_action(self, states, counts=[]):
+    def get_policy_distribution(self, states, counts=[]):
         """
 
         :param states:
@@ -243,7 +218,7 @@ class AI(object):
             pi_b = np.multiply(mask, policy)
             pi_b[np.argmax(q_values - mask*MAX_Q)] += np.maximum(0, 1 - np.sum(pi_b))
             pi_b /= np.sum(pi_b)
-            return np.random.choice(self.nb_actions, size=1, replace=True, p=pi_b)
+            return pi_b
         elif self.learning_type == 'soft_sort' and self.epsilon_soft > 0.0:
             e = np.sqrt(1 / (np.array(counts) + 1e-9))
             _, _, policy, _ = self.baseline.inference(states[0])
@@ -263,26 +238,37 @@ class AI(object):
                 allowed_error -= mass_top * (sorted_e[a_bot] + e[A_top])
             pi_b[pi_b < 0] = 0
             pi_b /= np.sum(pi_b)
-            return np.random.choice(self.nb_actions, size=1, replace=True, p=pi_b)
+            return pi_b
         elif self.learning_type == 'soft_sort' and self.epsilon_soft == 0.0:
             _, _, policy, _ = self.baseline.inference(states[0])
-            return np.random.choice(self.nb_actions, size=1, replace=True, p=np.array(policy))
+            return policy
         else:
-            return [np.argmax(q_values)]
+            greedy_action = np.argmax(q_values)
+            dist = np.zeros(shape=[self.nb_actions])
+            dist[greedy_action] = 1
+            return dist
 
-    def get_action(self, states, evaluate, counts=[]):
+    def get_action_and_policy(self, states, evaluate, counts=[]):
         # get action WITH exploration
         eps = self.epsilon if not evaluate else self.test_epsilon
-        if np.random.binomial(1, eps):
-            return np.random.randint(self.nb_actions)
-        else:
-            return self.get_max_action(states, counts=counts)[0]
+
+        policy = np.array(self.get_policy_distribution(states, counts=counts))
+
+        policy_with_exploration = policy * (1.-eps) + np.ones(self.nb_actions) * eps
+        policy_with_exploration /= np.sum(policy_with_exploration)
+        action = np.random.choice(self.nb_actions, size=1, replace=True, p=policy_with_exploration)[0]
+        return action, policy
 
     def learn(self):
         """ Learning from one minibatch """
         assert self.minibatch_size <= self.transitions.size, 'not enough data in the pool'
         s, a, r, s2, term = self.transitions.sample(self.minibatch_size)
-        self.train_on_batch(s, a, r, s2, term)
+        # TODO: get counter to use spibb online
+        # consider using counter_dataset instead of transitions (ExperienceReplay) to get samples
+        c = None
+        pi_b = None
+        c1 = None
+        self.train_on_batch(s, a, r, s2, term, c, pi_b, c1)
         if self.update_counter == self.update_freq:
             self.weight_transfer(from_model=self.network, to_model=self.target_network)
             self.update_counter = 0
@@ -290,7 +276,7 @@ class AI(object):
             self.update_counter += 1
 
     def learn_on_batch(self, batch):
-        objective = self._train_on_batch(*batch)
+        objective = self.train_on_batch(*batch)
         # updating target network
         if self.update_counter == self.update_freq:
             self.weight_transfer(from_model=self.network, to_model=self.target_network)
@@ -316,7 +302,7 @@ class AI(object):
         for g in self.optimizer.param_groups:
             g['lr'] = self.learning_rate
 
-    # TODO: remove this method is not used
+    # QUESTION: can we remove this method? it does not seem to be used
     # def update_eps(self, epoch):
     #     self.epsilon = self.start_epsilon / (epoch + 2)
 

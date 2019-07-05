@@ -91,46 +91,102 @@ class DataSet(object):
 
 
 class Dataset_Counts(object):
-    def __init__(self, data, param, dtype=np.float32):
-        self.data = data
-        self.dataset_size = len(self.data['s'])
-        self.state_shape = self.data['s'][0].shape
-        self.nb_actions = self.data['p'][0].shape[0]
+    def __init__(self, data=None, count_param=1, dtype=np.float32, state_shape=None, nb_actions=2):
+
+        self.state_shape = state_shape
+        self.nb_actions = nb_actions
         self.dtype = dtype
-        self.param = param
-        self.mean = np.mean(self.data['s'], axis=0)
-        self.std = np.std(self.data['s'], axis=0)
+        self.count_param = count_param
+        if data is not None:
+            self.s, self.a, self.r = data['s'], data['a'], data['r']
+            self.s2, self.t, self.c, self.p = data['s2'], data['t'], data['c'], data['p']
+            if 'c1' in data:
+                self.c1 = data['c1']
+            else:
+                self.c1 = None
+            # TODO remove this parameters
+            self.mean = np.mean(self.s, axis=0)
+            self.std = np.std(self.s, axis=0)
+        else:
+            self.s = np.empty(shape=[0] + list(self.state_shape), dtype=self.dtype)
+            self.s2 = np.empty(shape=[0] + list(self.state_shape), dtype=self.dtype)
+            self.t = np.empty(shape=0, dtype='bool')
+            self.a = np.empty(shape=0, dtype='int32')
+            self.r = np.empty(shape=0, dtype='float32')
+            self.p = np.empty(shape=[0, self.nb_actions], dtype='float32')
+            self.c1 = np.empty(shape=0, dtype='float32')
+            self.c = np.empty(shape=[0, self.nb_actions], dtype='float32')
+        self.dataset_size = len(self.s)
+
+
+    @staticmethod
+    def from_data(data, count_param, dtype=np.float32):
+        """
+        returns a new DatasetCount initialized with the given data
+        :param data: dictionary containing the keys s, a, r, s2, t, c, p[, c1]
+        :param count_param:
+        :param dtype:
+        :return: Dataset_Counts
+        """
+        assert 's' in data
+        assert 'p' in data
+        return Dataset_Counts(data, count_param, dtype,
+                              state_shape=data['s'][0].shape,
+                              nb_actions=data['p'][0].shape[0])
 
     @staticmethod
     def distance(x1, x2):
-        return np.linalg.norm(x1-x2)
+        return np.linalg.norm(x1-x2, ord=2)
 
     @staticmethod
-    def similarity(x1, x2, param, mean, std):
-        return max(0, 1 - Dataset_Counts.distance(x1, x2) / param)
+    def similarity(x1, x2, count_param, mean, std):
+        return max(0, 1 - Dataset_Counts.distance(x1, x2) / count_param)
 
     def sample(self, batch_size=1):
-        s = np.zeros([batch_size] + list(self.state_shape),
-                     dtype=self.dtype)
-        s2 = np.zeros([batch_size] + list(self.state_shape),
-                      dtype=self.dtype)
+        s = np.zeros([batch_size] + list(self.state_shape), dtype=self.dtype)
+        s2 = np.zeros([batch_size] + list(self.state_shape), dtype=self.dtype)
         t = np.zeros(batch_size, dtype='bool')
         a = np.zeros(batch_size, dtype='int32')
         r = np.zeros(batch_size, dtype='float32')
         c1 = np.zeros(batch_size, dtype='float32')
         c = np.zeros([batch_size, self.nb_actions], dtype='float32')
         p = np.zeros([batch_size, self.nb_actions], dtype='float32')
+        # capacity = 100
+        # batch_size = 20
+        # size = 20
+        # states = np.arange(capacity) * 10
+        # locations = np.random.randint(low=size - batch_size, high=size, size=batch_size)
+        # samples = states[locations]
         for i in range(batch_size):
+            # https://scipy-cookbook.readthedocs.io/items/Indexing.html#List-of-locations-indexing
+            # locations = np.random(low =self.size-batch_size, high=self.size, size=batch_size)
             j = np.random.randint(self.dataset_size)
-            s[i], a[i], r[i] = self.data['s'][j], self.data['a'][j], self.data['r'][j]
-            s2[i], t[i], c[i], p[i] = self.data['s2'][j], self.data['t'][j], self.data['c'][j], self.data['p'][j]
-            if 'c1' in self.data:
-                c1[i] = self.data['c1'][j]
+            s[i], a[i], r[i] = self.s[j], self.a[j], self.r[j]
+            s2[i], t[i], c[i], p[i] = self.s2[j], self.t[j], self.c[j], self.p[j]
+            if self.c1 is not None:
+                c1[i] = self.c1[j]
         return s, a, r, s2, t, c, p, c1
 
     def compute_counts(self, state):
         counts = np.zeros(self.nb_actions)
         for j in range(self.dataset_size):
-            s = Dataset_Counts.similarity(state, self.data['s'][j], self.param, self.mean, self.std)
-            counts[self.data['a'][j]] += s
+            s = Dataset_Counts.similarity(state, self.s[j], self.count_param, self.mean, self.std)
+            counts[self.a[j]] += s
         return counts
+
+    def add(self, s, a, r, t, p):
+        # appending to numpy arrays is very expensive
+        # TODO: change how Dataset_Count adds more samples
+        # idea: instantiate a large array and increase size when it gets full
+
+        if self.dataset_size > 0 and not self.t[-1]:
+            self.s2[-1] = s
+
+        self.s = np.append(self.s, [s], axis=0)
+        self.a = np.append(self.a, [a], axis=0)
+        self.r = np.append(self.r, [r], axis=0)
+        self.t = np.append(self.t, [t], axis=0)
+        self.p = np.append(self.p, [p], axis=0)
+
+        empty_state = np.full(shape=list(self.state_shape), fill_value=np.nan)
+        self.s2 = np.append(self.s2, [empty_state], axis=0)

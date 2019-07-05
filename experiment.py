@@ -6,6 +6,7 @@ import time
 from copy import deepcopy
 
 from utils import write_to_csv, plot
+from dataset import Dataset_Counts
 
 
 class DQNExperiment(object):
@@ -23,7 +24,7 @@ class DQNExperiment(object):
         self.env = env
         self.ai = ai
         self.history_len = history_len
-        # self.annealing = annealing  # TODO: remove, this is never used
+        # self.annealing = annealing  # QUESTION: can we remove this parameter? it does not seem to be used
         self.test_epsilon = test_epsilon
         self.max_start_nullops = max_start_nullops
         self.saving_period = saving_period  # after each `saving_period` epochs, the results so far will be saved.
@@ -40,6 +41,8 @@ class DQNExperiment(object):
         self.curr_epoch = 0
         self.all_rewards = []
         self.extra_stochasticity = extra_stochasticity
+
+        self.dataset_counter = None
 
     def do_epochs(self, number_of_epochs=1, steps_per_epoch=10000, is_learning=True, is_testing=True, steps_per_test=10000, **kwargs):
         best_perf = -10000
@@ -69,13 +72,21 @@ class DQNExperiment(object):
                     print('Saving best network', flush=True)
                 self.all_rewards.append(eval_scores / eval_episodes)
 
+            print('\n')
             print('=' * 60, flush=True)
             print('>>>>>  Epoch {} / {}  >>>>> Current eps  {:.2f} '.format(epoch + 1, number_of_epochs, self.ai.epsilon), flush=True)
+            print('Training ...', flush=True)
             b = time.time()
             self.steps = 0
+            rewards = []
+            training_episodes = 0
             while self.steps < steps_per_epoch:
-                self.do_episodes(number_of_epochs=1, is_learning=is_learning)
+                new_rewards = self.do_episodes(number_of_epochs=1, is_learning=is_learning)
+                rewards.extend(new_rewards)
+                training_episodes += 1
             print("Epoch ran in {:.1f} seconds".format(time.time() - b), flush=True)
+            print("Epoch ran {} episodes".format(training_episodes), flush=True)
+            print("Average performance: {:.1f} ".format(np.array(rewards).mean()))
 
             self.ai.anneal_eps(epoch * steps_per_epoch)
             self.ai.update_lr(epoch)
@@ -84,8 +95,8 @@ class DQNExperiment(object):
     def do_episodes(self, number_of_epochs=1, is_learning=True):
         all_rewards = []
         for _ in range(number_of_epochs):
-            reward = self._do_episode(is_learning=is_learning)
-            all_rewards.append(reward)
+            episode_rewards = self._do_episode(is_learning=is_learning)
+            all_rewards.append(sum(episode_rewards))
             self.score_agent_window = self._update_window(self.score_agent_window, self.score_agent)
             self.steps_agent_window = self._update_window(self.steps_agent_window, self.last_episode_steps)
             if self.episode_num % 1000 == -1:
@@ -99,11 +110,13 @@ class DQNExperiment(object):
             self.episode_num += 1
         return all_rewards
 
-    def evaluate(self, number_of_epochs=10):
+    def evaluate(self, number_of_epochs=1):
         for num in range(number_of_epochs):
             self._do_episode(is_learning=False, evaluate=True)
+        # TODO this only returns the score of the last episode
         return self.score_agent
 
+    # QUESTION: is_learning seems to be the opposite of evaluate, can we use only one?
     def _do_episode(self, is_learning=True, evaluate=False):
         rewards = []
         self._episode_reset()
@@ -123,16 +136,18 @@ class DQNExperiment(object):
 
     def _step(self, evaluate=False):
         self.last_episode_steps += 1
-        action = self.ai.get_action(self.last_state, evaluate)
+        action, policy = self.ai.get_action_and_policy(self.last_state, evaluate)
         new_obs, reward, game_over, _ = self.env.step(action)
         if new_obs.ndim == 1 and len(self.env.state_shape) == 2:
             new_obs = new_obs.reshape(self.env.state_shape)
         if not evaluate:
             self.steps += 1
             if self.history_len > 1:
-                self.ai.transitions.add(s=self.last_state[-1].astype('float32'), a=action, r=reward, t=game_over)
+                state = self.last_state[-1].astype('float32')
             else:
-                self.ai.transitions.add(s=self.last_state.astype('float32'), a=action, r=reward, t=game_over)
+                state = self.last_state.astype('float32')
+            self.ai.transitions.add(s=state, a=action, r=reward, t=game_over)
+            self.dataset_counter.add(s=state, a=action, r=reward, t=game_over, p=policy)
             self.total_training_steps += 1
         self._update_state(new_obs)
         return reward, game_over
@@ -273,7 +288,7 @@ class BatchExperiment(object):
             counts = self.dataset.compute_counts(self.last_state)
         else:
             counts = []
-        action = self.ai.get_action(self.last_state, evaluate=True, counts=counts)
+        action, policy = self.ai.get_action_and_policy(self.last_state, evaluate=True, counts=counts)
         new_obs, reward, game_over, _ = self.env.step(action)
         self._update_state(new_obs)
         return reward, game_over
