@@ -100,7 +100,8 @@ def run(domain, config, options):
             # resets dataset for online experiment
             expt.dataset_counter = Dataset_Counts(count_param=params['count_param'],
                                                   state_shape=env.state_shape,
-                                                  nb_actions=env.nb_actions)
+                                                  nb_actions=env.nb_actions,
+                                                  replay_max_size=params['replay_max_size'])
 
         env.reset()
         with open(expt.folder_name + '/config.yaml', 'w') as y:

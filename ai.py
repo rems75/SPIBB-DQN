@@ -182,6 +182,7 @@ class AI(object):
         else:
             raise ValueError('We did not recognize that learning type')
 
+        # Huber loss
         errs = (bellman_target - q_pred).unsqueeze(1)
         quad = torch.min(torch.abs(errs), 1)[0]
         lin = torch.abs(errs) - quad
@@ -190,6 +191,7 @@ class AI(object):
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+        return loss
 
     def get_q(self, state):
         state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
@@ -258,22 +260,6 @@ class AI(object):
         policy_with_exploration /= np.sum(policy_with_exploration)
         action = np.random.choice(self.nb_actions, size=1, replace=True, p=policy_with_exploration)[0]
         return action, policy
-
-    def learn(self):
-        """ Learning from one minibatch """
-        assert self.minibatch_size <= self.transitions.size, 'not enough data in the pool'
-        s, a, r, s2, term = self.transitions.sample(self.minibatch_size)
-        # TODO: get counter to use spibb online
-        # consider using counter_dataset instead of transitions (ExperienceReplay) to get samples
-        c = None
-        pi_b = None
-        c1 = None
-        self.train_on_batch(s, a, r, s2, term, c, pi_b, c1)
-        if self.update_counter == self.update_freq:
-            self.weight_transfer(from_model=self.network, to_model=self.target_network)
-            self.update_counter = 0
-        else:
-            self.update_counter += 1
 
     def learn_on_batch(self, batch):
         objective = self.train_on_batch(*batch)

@@ -6,7 +6,6 @@ import time
 from copy import deepcopy
 
 from utils import write_to_csv, plot
-from dataset import Dataset_Counts
 
 
 class DQNExperiment(object):
@@ -125,10 +124,13 @@ class DQNExperiment(object):
         while not term:
             reward, term = self._step(evaluate=evaluate)
             rewards.append(reward)
-            if self.ai.transitions.size >= max(self.replay_min_size, self.ai.minibatch_size) and is_learning \
-                    and self.steps % self.ai.learning_frequency == 0:
-                self.ai.learn()
             self.score_agent += reward
+
+            if self.dataset_counter.size >= max(self.replay_min_size, self.ai.minibatch_size) and is_learning \
+                    and (self.steps % self.ai.learning_frequency) == 0:
+                mini_batch = self.dataset_counter.sample(self.ai.minibatch_size)
+                self.ai.learn_on_batch(mini_batch)
+
             if not term and self.last_episode_steps >= self.episode_max_len:
                 print('Reaching maximum number of steps in the current episode.', flush=True)
                 term = True
@@ -238,12 +240,13 @@ class BatchExperiment(object):
                 if pass_on_dataset % 200 == 199:
                     print('>>>>> Pass  ' + str(pass_on_dataset) + '/' + str(passes_on_dataset - 1) + '  >>>>>', flush=True)
                 steps = 0
-                while steps < self.dataset.dataset_size:
-                    self.ai.learn_on_batch(self.dataset.sample(self.ai.minibatch_size))
+                while steps < self.dataset.size:
+                    mini_batch = self.dataset.sample(self.ai.minibatch_size, full_batch=True)
+                    self.ai.learn_on_batch(mini_batch)
                     steps += self.ai.minibatch_size
                     total_steps += self.ai.minibatch_size
                     # Update learning rate every pass on the dataset or every 20000 steps whichever is larger
-                    if 0 <= total_steps % max(20000, self.dataset.dataset_size) < self.ai.minibatch_size:
+                    if 0 <= total_steps % max(20000, self.dataset.size) < self.ai.minibatch_size:
                         self.ai.update_lr(updates)
                         updates += 1
 
