@@ -72,7 +72,7 @@ class AI(object):
         else:
             raise ValueError('Invalid network_size.')
 
-    def train_on_batch(self, s, a, r, s2, t, c=None, pi_b=None, c1=None):
+    def train_on_batch(self, s, a, r, s2, term, c=None, pi_b=None, c1=None):
         """
         each parameter is a list containing past experiences
 
@@ -81,16 +81,16 @@ class AI(object):
         :param r: rewards
         :param s2: next states
         :param t: terminal signals (indicate end of trajectory)
-        :param c: state-action visits
-        :param pi_b: baseline policy pi_b(a|s)
-        :param c1: state visits
+        :param c: state-action visits for the next state s2
+        :param pi_b: baseline policy pi_b(a|s2) for the next state
+        :param c1: state visits related to s
         :return: loss
         """
         s = torch.FloatTensor(s).to(self.device)
         s2 = torch.FloatTensor(s2).to(self.device)
         a = torch.LongTensor(a).to(self.device)
         r = torch.FloatTensor(r).to(self.device)
-        t = torch.FloatTensor(np.float32(t)).to(self.device)
+        t = torch.FloatTensor(np.float32(term)).to(self.device)
 
         # Squeeze dimensions for history_len = 1
         s = torch.squeeze(s)
@@ -174,8 +174,11 @@ class AI(object):
         elif self.learning_type == 'pi_b':
             bellman_target = _get_bellman_target_pi_b(c, pi_b)
         elif self.learning_type == 'pi_b_hat':
-            pi_b_hat = c / c1[:, np.newaxis]
-            # print(np.mean(pi_b_hat - pi_b), np.std(pi_b_hat - pi_b))
+            total_states_visits = c.sum(axis=1)
+            # avoid division problem
+            # this does not change the result since the future value of terminal transitions is ignored
+            total_states_visits[term] = 1
+            pi_b_hat = c / total_states_visits[:, np.newaxis]
             bellman_target = _get_bellman_target_pi_b(c, pi_b_hat)
         elif self.learning_type == 'soft_sort':
             bellman_target = _get_bellman_target_soft_sort(c, pi_b)
@@ -214,7 +217,7 @@ class AI(object):
                 # estimate policy according to visits counter
                 total_state_visits = counts.sum()
                 if total_state_visits > 0:
-                    policy = counts/counts.sum()
+                    policy = counts/total_state_visits
                 else:
                     policy = np.ones(self.nb_actions) / self.nb_actions
             pi_b = np.multiply(mask, policy)
