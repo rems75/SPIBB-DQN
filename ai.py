@@ -83,7 +83,7 @@ class AI(object):
         :param t: terminal signals (indicate end of trajectory)
         :param c: state-action visits for the next state s2
         :param pi_b: baseline policy pi_b(a|s2) for the next state
-        :param c1: state visits related to s
+        :param c1: state-action counter related to (s,a)
         :return: loss
         """
         s = torch.FloatTensor(s).to(self.device)
