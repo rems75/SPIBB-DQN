@@ -108,7 +108,6 @@ class Dataset_Counts(object):
             # TODO remove this parameters
             self.mean = np.mean(self.s, axis=0)
             self.std = np.std(self.s, axis=0)
-
             self.size = len(self.s)
         else:
             self.s = np.zeros(shape=[initial_size] + list(self.state_shape), dtype=self.dtype)
@@ -119,9 +118,7 @@ class Dataset_Counts(object):
             self.p = np.zeros(shape=[initial_size, self.nb_actions], dtype='float32')
             self.c1 = np.zeros(shape=initial_size, dtype='float32')
             self.c = np.zeros(shape=[initial_size, self.nb_actions], dtype='float32')
-            self.tail = 0
             self.size = 0
-
 
     @staticmethod
     def from_data(data, count_param, dtype=np.float32):
@@ -140,13 +137,32 @@ class Dataset_Counts(object):
 
     @staticmethod
     def distance(x1, x2):
-        return np.linalg.norm(x1-x2, ord=2)
+        return np.linalg.norm(x1-x2)
 
     @staticmethod
     def similarity(x1, x2, count_param, mean, std):
         return max(0, 1 - Dataset_Counts.distance(x1, x2) / count_param)
 
     def sample(self, batch_size=1, full_batch=False):
+        """
+        return a list containing past experiences
+
+        :param batch_size: number of samples to be drawn from the dataset
+        :param full_batch:
+            if True: samples from the full dataset
+            if False: samples only from the last replay_max_size transitions
+
+        :return: s: states
+        :return: a: actions
+        :return: r: rewards
+        :return: s2: next states
+        :return: t: terminal signals (indicate end of trajectory)
+        :return: c: state-action visits for the next state s2
+        :return: pi_b: baseline policy pi_b(a|s2) for the next state
+        :return: c1: state-action counter (related to s,a)
+        """
+
+        # TODO avoid instantiating a new arrays for each call
         s = np.zeros([batch_size] + [1] + list(self.state_shape), dtype=self.dtype)
         s2 = np.zeros([batch_size] + [1] + list(self.state_shape), dtype=self.dtype)
         t = np.zeros(batch_size, dtype='bool')
@@ -155,35 +171,30 @@ class Dataset_Counts(object):
         c1 = np.zeros(batch_size, dtype='float32')
         c = np.zeros([batch_size, self.nb_actions], dtype='float32')
         p = np.zeros([batch_size, self.nb_actions], dtype='float32')
-        # capacity = 100
-        # batch_size = 20
-        # size = 20
-        # states = np.arange(capacity) * 10
-        # locations = np.random.randint(low=size - batch_size, high=size, size=batch_size)
-        # samples = states[locations]
+
         for i in range(batch_size):
-            # https://scipy-cookbook.readthedocs.io/items/Indexing.html#List-of-locations-indexing
-            # locations = np.random(low =self.size-batch_size, high=self.size, size=batch_size)
-            # j = np.random.randint(self.size)
-            s[i], a[i], r[i], s2[i], t[i], c[i], p[i], c1[i] = self._get_transition(full_batch)
-            # if self.c1 is not None:
-            #     c1[i] = self.c1[j]
+            randint = self.sample_index(full_batch)
+            s[i], a[i], r[i], s2[i], t[i], c[i], p[i], c1[i] = self._get_transition(randint)
         return s, a, r, s2, t, c, p, c1
 
-    def _get_transition(self, full_batch):
+    def sample_index(self, full_batch):
         if full_batch:
-            randint = np.random.randint(self.size-1)  # TODO: this -1 is related to the history_size, probably we should remove it
+            # sample from the full dataset ignoring last transition that might be incomplete
+            randint = np.random.randint(self.size - 1)
         else:
-            randint = np.random.randint(max(self.size - self.replay_max_size, 0), self.size-1)  #TODO: remove
-        s = self.s[randint]
-        a = self.a[randint]
-        r = self.r[randint]
-        t = self.t[randint]
-        s2 = self.s2[randint]
-        c = self.c[randint]
-        p = self.p[randint]
-        c1 = self.c1[randint]
+            # sample from the last replay_max_size transitions, ignoring last transition that might be incomplete
+            randint = np.random.randint(max(self.size - self.replay_max_size, 0), self.size - 1)
+        return randint
 
+    def _get_transition(self, ind):
+        s = self.s[ind]
+        a = self.a[ind]
+        r = self.r[ind]
+        t = self.t[ind]
+        s2 = self.s2[ind]
+        c = self.c[ind]
+        p = self.p[ind]
+        c1 = self.c1[ind]
         return s, a, r, s2, t, c, p, c1
 
     def compute_counts(self, state):
@@ -203,8 +214,13 @@ class Dataset_Counts(object):
         self.t[self.size] = t
         self.p[self.size] = p
 
+        self.increment_counters(s, a)
+
         self.size += 1
         if self.size == len(self.s):
+            self.expand_vectors()
+
+    def expand_vectors(self):
             self.s = self.expand(self.s)
             self.a = self.expand(self.a)
             self.r = self.expand(self.r)
@@ -214,14 +230,79 @@ class Dataset_Counts(object):
             self.c = self.expand(self.c)
             self.c1 = self.expand(self.c1)
 
+    def increment_counters(self, s, a):
+        """
+        increase counters of previous transitions according to the similarity between s and a
+        :param s:
+        :param a:
+        """
+        # # increment counters with array operations
+        # self.c[self.size][a] = 1
+        # if self.size > 0:
+        #     # new_state_stacked = np.repeat(np.array([s], dtype=self.dtype), self.size, axis=0)
+        #     # distance = np.linalg.norm(self.s[0:self.size, :] - new_state_stacked, axis=1)
+        #     x, y = np.broadcast_arrays(s, self.s[0:self.size, :])
+        #     distance = np.linalg.norm(x - y, axis=1)
+        #     sim_vec = np.maximum(1 - distance/self.count_param, 0)
+        #     self.c[np.arange(self.size), a] += sim_vec
+        #
+        #     z = np.zeros((self.size, self.nb_actions))
+        #     z[np.arange(self.size), self.a[0:self.size]] = sim_vec
+        #     self.c[self.size] += z.sum(axis=0)
+
+        # increment counter iteratively
+        self.c[self.size][a] = 1
+        for ind in range(self.size):
+            sim = Dataset_Counts.similarity(self.s[ind], s, self.count_param, None, None)
+            # increase counter of s', a in transitions of the dataset with a state s' similar to s
+            self.c[ind][a] += sim
+            # increase counter of s, a' if the dataset has a transition s', a', such that s' is similar to s
+            self.c[self.size][self.a[ind]] += sim
+
+    def get_next_state_action_counter(self):
+        next_state_action_counter = np.zeros([self.size-1, self.nb_actions], dtype='float32')
+        for i in range(self.size):
+            if not self.t[i] and i < self.size-1:
+                next_state_action_counter[i] = self.c[i + 1]
+        return next_state_action_counter
 
     def expand(self, a):
         new_shape = list(a.shape)
         new_shape[0] *= 4
-        new_a = np.empty(new_shape, dtype=a.dtype)
+        new_a = np.zeros(new_shape, dtype=a.dtype)
         new_a[:self.size] = a
         return new_a
 
+    @staticmethod
+    def from_dataset(dataset: DataSet, count_param):
+        """
+        construct a dataset_count from a regular dataset
 
+        :param dataset: Dataset
+        :param count_param:
+        :return: new dataset_count
+        """
+        d = Dataset_Counts(state_shape=dataset.state_shape, nb_actions=dataset.nb_actions, count_param=count_param)
+        for i in range(len(dataset.states)):
+            d.add(
+                dataset.states[i],
+                dataset.actions[i],
+                dataset.rewards[i],
+                dataset.terms[i],
+                dataset.policy[i]
+            )
+        return d
 
+    def save_dataset(self, file_path):
+        with open(file_path, "wb") as f:
+            pickle.dump([self.s[0:self.size], self.a[0:self.size], self.r[0:self.size], self.t[0:self.size],
+                         self.p[0:self.size], self.c[0:self.size],
+                         self.count_param, self.state_shape, self.nb_actions, self.dtype, self.size], f)
 
+    @staticmethod
+    def load_dataset(file_path):
+        d = Dataset_Counts(nb_actions=1, state_shape=[1], initial_size=1)
+        with open(file_path, "rb") as f:
+            [d.s, d.a, d.r, d.t, d.p, d.c, d.count_param, d.state_shape, d.nb_actions, d.dtype, d.size] = pickle.load(f)
+        d.expand_vectors()
+        return d
