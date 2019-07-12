@@ -181,7 +181,7 @@ class Baseline(object):
                 np.mean(all_rewards[:int(number_of_epochs/100)])), flush=True)
 
 
-def compute_counts(dataset, overwrite=False, count_param = 0.2):
+def compute_counts(dataset, overwrite=False, count_param=0.2):
     """ Compute the pseudo-counts for each state-action pair present in the dataset following the methodology described in the paper.
 
     Args:
@@ -202,64 +202,37 @@ def compute_counts(dataset, overwrite=False, count_param = 0.2):
 
     t = time.time()
     print("Computing counts. The dataset contains {} transitions.".format(len(dataset.states)), flush=True)
-
-    data = {}
-    data['s'] = np.zeros([len(dataset.states) - 1] +
-                         list(dataset.state_shape), dtype='float32')
-    data['s2'] = np.zeros([len(dataset.states) - 1] +
-                          list(dataset.state_shape), dtype='float32')
-    data['a'] = np.zeros((len(dataset.states) - 1), dtype='int32')
-    data['r'] = np.zeros((len(dataset.states) - 1), dtype='float32')
-    data['t'] = np.zeros((len(dataset.states) - 1), dtype='bool')
-    data['c'] = np.zeros((len(dataset.states) - 1, dataset.nb_actions), dtype='float32')
-    data['c1'] = np.zeros((len(dataset.states) - 1), dtype='float32')
-    data['p'] = np.zeros((len(dataset.states) - 1, dataset.nb_actions), dtype='float32')
-    data['q'] = np.zeros((len(dataset.states) - 1, dataset.nb_actions), dtype='float32')
-
-    mean, std = dataset.counts_weights()
-    for i in range(len(dataset.states)-1):
-        if i % 1000 == 999:
-            print('{} samples processed'.format(i))
-        data['s'][i] = dataset.states[i]
-        data['a'][i] = dataset.actions[i]
-        data['r'][i] = dataset.rewards[i]
-        for j in range(len(dataset.states)-1):
-            if dataset.actions[i] == dataset.actions[j]:
-                s = Dataset_Counts.similarity(dataset.states[i], dataset.states[j], count_param, mean, std)
-                data['c1'][i] += s
-        if dataset.terms[i]:
-            data['t'][i] = True
-        else:
-            data['s2'][i] = dataset.states[i+1]
-            data['p'][i] = dataset.policy[i+1]
-            data['q'][i] = dataset.qfunction[i+1]
-            for j in range(len(dataset.states)-1):
-                s = Dataset_Counts.similarity(dataset.states[i + 1], dataset.states[j], count_param, mean, std)
-                # increments the similarity with state action pair
-                data['c'][i, dataset.actions[j]] += s
-
+    d = Dataset_Counts.from_dataset(dataset, count_param)
     print("Saving data with counts to {}".format(full_path), flush=True)
-    with open(full_path, "wb") as f:
-        pickle.dump(data, f)
-    print("Data with counts saved, {} samples".format(len(data['s'])), flush=True)
+    d.save_dataset(full_path)
+    print("Data with counts saved, {} samples".format(d.size), flush=True)
     print("Counts computed in " + str(time.time() - t) + " seconds", flush=True)
 
 
 def run(args):
     """ Either generates a dataset from a baseline and computes its associated counts, or evaluates a baseline.
     """
-
-    # fix random seed for reproducibility
-    np.random.seed(args.seed)
-
     for fff in os.listdir(args.baseline_dir):
         if fff.endswith(".yaml"):
             yaml_file = os.path.join(args.baseline_dir, fff)
             params = yaml.safe_load(open(yaml_file, 'r'))
             print('Loading config from {}'.format(yaml_file))
             break
-    if not params:
+    else:
+        # no yaml file found
         raise ValueError('We could not find the configuration file for the baseline, it should be a yaml file.')
+
+    if args.seed is not None:
+        # if seed is given in the command line ignores seed from yaml file
+        np.random.seed(args.seed)
+        params['seed'] = args.seed
+    else:
+        if 'seed' in params:
+            args.seed = params['seed']
+        else:
+            print("no seed found, using 123")
+            args.seed = 123
+            params['seed'] = 123
 
     if args.extra_stochasticity > 0.0:
         params['extra_stochasticity'] = args.extra_stochasticity
@@ -272,22 +245,25 @@ def run(args):
 
     if args.evaluate_baseline:
         baseline.evaluate_baseline(env, params, args.eval_steps, args.eval_epochs, args.noise_factor)
-        return
 
-    print("Generating dataset with actual size {}...".format(args.dataset_size), flush=True)
-    dataset = baseline.generate_dataset(
-        env, os.path.join(args.baseline_dir, args.dataset_dir), params, dataset_size=args.dataset_size,
-        overwrite=args.overwrite, noise_factor=args.noise_factor)
+    if args.generate_dataset:
+        print("Generating dataset with actual size {}...".format(args.dataset_size), flush=True)
+        dataset = baseline.generate_dataset(
+            env, os.path.join(args.baseline_dir, args.dataset_dir), params, dataset_size=args.dataset_size,
+            overwrite=args.overwrite, noise_factor=args.noise_factor)
 
-    compute_counts(dataset, overwrite=args.overwrite, count_param=args.count_param)
+        compute_counts(dataset, overwrite=args.overwrite, count_param=args.count_param)
 
 
 if __name__ == '__main__':
-
+    # TODO switch command line options to click like in train.py
     parser = argparse.ArgumentParser(description="Options")
-    parser.add_argument('baseline_dir', type=str, default='baseline', help='path of the baseline')
-    parser.add_argument('baseline_name', type=str, default='weights.pt', help='file containing the baseline')
-    parser.add_argument('--seed', type=int, default=123, help='random seed')
+    parser.add_argument('baseline_dir', type=str, default='baseline',
+                        help='path of the baseline')
+    parser.add_argument('baseline_name', type=str, default='weights.pt',
+                        help='file containing the weights of thep baseline policy')
+    parser.add_argument('--seed', type=int, default=None,
+                        help='random seed')
     parser.add_argument('--temperature', type=float, default=0.1, help='temperature used for the soft q-values')
     parser.add_argument('--device', type=str, default='cpu', help='cpu or gpu')
 
@@ -313,6 +289,4 @@ if __name__ == '__main__':
     parser.add_argument('--overwrite', action="store_true",
                         help='overwrite existing dataset')
 
-    args = parser.parse_args()
-
-    run(args)
+    run(parser.parse_args())

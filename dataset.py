@@ -91,56 +91,38 @@ class DataSet(object):
 
 
 class Dataset_Counts(object):
-    def __init__(self, data=None, count_param=1, dtype=np.float32, state_shape=None, nb_actions=2, initial_size=1000,
-                 replay_max_size=100):
+    def __init__(self, s=None, a=None, r=None, t=None, p=None, c=None,
+                 count_param=1, dtype=np.float32, state_shape=None, nb_actions=2,
+                 initial_size=512, replay_max_size=100):
         self.state_shape = state_shape
         self.nb_actions = nb_actions
         self.dtype = dtype
         self.count_param = count_param
         self.replay_max_size = replay_max_size
-        if data is not None:
-            self.s, self.a, self.r = data['s'], data['a'], data['r']
-            self.s2, self.t, self.c, self.p = data['s2'], data['t'], data['c'], data['p']
-            if 'c1' in data:
-                self.c1 = data['c1']
-            else:
-                self.c1 = None
-            # TODO remove this parameters
-            self.mean = np.mean(self.s, axis=0)
-            self.std = np.std(self.s, axis=0)
+        if s is not None:
+            self.s, self.a, self.r, self.t, self.p = s, a, r, t, p
             self.size = len(self.s)
+            if c is not None:
+                self.c = c
+            else:
+                self.compute_count_from_scratch()
+
+            self.expand_vectors()
         else:
             self.s = np.zeros(shape=[initial_size] + list(self.state_shape), dtype=self.dtype)
-            self.s2 = np.zeros(shape=[initial_size] + list(self.state_shape), dtype=self.dtype)
             self.t = np.zeros(shape=initial_size, dtype='bool')
             self.a = np.zeros(shape=initial_size, dtype='int32')
             self.r = np.zeros(shape=initial_size, dtype='float32')
             self.p = np.zeros(shape=[initial_size, self.nb_actions], dtype='float32')
-            self.c1 = np.zeros(shape=initial_size, dtype='float32')
             self.c = np.zeros(shape=[initial_size, self.nb_actions], dtype='float32')
             self.size = 0
-
-    @staticmethod
-    def from_data(data, count_param, dtype=np.float32):
-        """
-        returns a new DatasetCount initialized with the given data
-        :param data: dictionary containing the keys s, a, r, s2, t, c, p[, c1]
-        :param count_param:
-        :param dtype:
-        :return: Dataset_Counts
-        """
-        assert 's' in data
-        assert 'p' in data
-        return Dataset_Counts(data, count_param, dtype,
-                              state_shape=data['s'][0].shape,
-                              nb_actions=data['p'][0].shape[0])
 
     @staticmethod
     def distance(x1, x2):
         return np.linalg.norm(x1-x2)
 
     @staticmethod
-    def similarity(x1, x2, count_param, mean, std):
+    def similarity(x1, x2, count_param):
         return max(0, 1 - Dataset_Counts.distance(x1, x2) / count_param)
 
     def sample(self, batch_size=1, full_batch=False):
@@ -172,42 +154,42 @@ class Dataset_Counts(object):
         c = np.zeros([batch_size, self.nb_actions], dtype='float32')
         p = np.zeros([batch_size, self.nb_actions], dtype='float32')
 
-        for i in range(batch_size):
-            randint = self.sample_index(full_batch)
+        for i, randint in enumerate(self.sample_indexes(full_batch, batch_size)):
             s[i], a[i], r[i], s2[i], t[i], c[i], p[i], c1[i] = self._get_transition(randint)
         return s, a, r, s2, t, c, p, c1
 
-    def sample_index(self, full_batch):
+    def sample_indexes(self, full_batch, size):
         if full_batch:
             # sample from the full dataset ignoring last transition that might be incomplete
-            randint = np.random.randint(self.size - 1)
+            return np.random.randint(self.size - 1, size=size)
         else:
             # sample from the last replay_max_size transitions, ignoring last transition that might be incomplete
-            randint = np.random.randint(max(self.size - self.replay_max_size, 0), self.size - 1)
-        return randint
+            return np.random.randint(max(self.size - self.replay_max_size, 0), self.size - 1, size=size)
 
     def _get_transition(self, ind):
         s = self.s[ind]
         a = self.a[ind]
         r = self.r[ind]
         t = self.t[ind]
-        s2 = self.s2[ind]
-        c = self.c[ind]
-        p = self.p[ind]
-        c1 = self.c1[ind]
+        if not t:
+            s2 = self.s[ind + 1]
+            c = self.c[ind + 1]
+            p = self.p[ind + 1]
+        else:
+            s2 = np.zeros(self.state_shape)
+            c = np.zeros(self.nb_actions)
+            p = np.zeros(self.nb_actions)
+        c1 = self.c[ind][self.a[ind]]
         return s, a, r, s2, t, c, p, c1
 
     def compute_counts(self, state):
         counts = np.zeros(self.nb_actions)
         for j in range(self.size):
-            s = Dataset_Counts.similarity(state, self.s[j], self.count_param, self.mean, self.std)
+            s = Dataset_Counts.similarity(state, self.s[j], self.count_param)
             counts[self.a[j]] += s
         return counts
 
     def add(self, s, a, r, t, p):
-        if self.size > 0 and not self.t[self.size - 1]:
-            self.s2[self.size-1] = s
-
         self.s[self.size] = s
         self.a[self.size] = a
         self.r[self.size] = r
@@ -226,9 +208,7 @@ class Dataset_Counts(object):
             self.r = self.expand(self.r)
             self.t = self.expand(self.t)
             self.p = self.expand(self.p)
-            self.s2 = self.expand(self.s2)
             self.c = self.expand(self.c)
-            self.c1 = self.expand(self.c1)
 
     def increment_counters(self, s, a):
         """
@@ -236,6 +216,7 @@ class Dataset_Counts(object):
         :param s:
         :param a:
         """
+        # TODO speedup counting using avoiding iterate over array
         # # increment counters with array operations
         # self.c[self.size][a] = 1
         # if self.size > 0:
@@ -253,20 +234,14 @@ class Dataset_Counts(object):
         # increment counter iteratively
         self.c[self.size][a] = 1
         for ind in range(self.size):
-            sim = Dataset_Counts.similarity(self.s[ind], s, self.count_param, None, None)
+            sim = Dataset_Counts.similarity(self.s[ind], s, self.count_param)
             # increase counter of s', a in transitions of the dataset with a state s' similar to s
             self.c[ind][a] += sim
             # increase counter of s, a' if the dataset has a transition s', a', such that s' is similar to s
             self.c[self.size][self.a[ind]] += sim
 
-    def get_next_state_action_counter(self):
-        next_state_action_counter = np.zeros([self.size-1, self.nb_actions], dtype='float32')
-        for i in range(self.size):
-            if not self.t[i] and i < self.size-1:
-                next_state_action_counter[i] = self.c[i + 1]
-        return next_state_action_counter
-
     def expand(self, a):
+        # allocate more memory for the array a
         new_shape = list(a.shape)
         new_shape[0] *= 4
         new_a = np.zeros(new_shape, dtype=a.dtype)
@@ -282,27 +257,25 @@ class Dataset_Counts(object):
         :param count_param:
         :return: new dataset_count
         """
-        d = Dataset_Counts(state_shape=dataset.state_shape, nb_actions=dataset.nb_actions, count_param=count_param)
-        for i in range(len(dataset.states)):
-            d.add(
-                dataset.states[i],
-                dataset.actions[i],
-                dataset.rewards[i],
-                dataset.terms[i],
-                dataset.policy[i]
-            )
-        return d
+        return Dataset_Counts(dataset.states, dataset.actions, dataset.rewards, dataset.terms, dataset.policy,
+                           state_shape=dataset.state_shape, nb_actions=dataset.nb_actions, count_param=count_param)
 
     def save_dataset(self, file_path):
         with open(file_path, "wb") as f:
             pickle.dump([self.s[0:self.size], self.a[0:self.size], self.r[0:self.size], self.t[0:self.size],
                          self.p[0:self.size], self.c[0:self.size],
-                         self.count_param, self.state_shape, self.nb_actions, self.dtype, self.size], f)
+                         self.count_param, self.dtype, self.state_shape, self.nb_actions], f)
 
     @staticmethod
     def load_dataset(file_path):
-        d = Dataset_Counts(nb_actions=1, state_shape=[1], initial_size=1)
         with open(file_path, "rb") as f:
-            [d.s, d.a, d.r, d.t, d.p, d.c, d.count_param, d.state_shape, d.nb_actions, d.dtype, d.size] = pickle.load(f)
-        d.expand_vectors()
-        return d
+            return Dataset_Counts(*(pickle.load(f)))
+
+    def compute_count_from_scratch(self):
+        """
+        computes the counters of each state action pair,
+        assuming self.s and self.a are already populated and self.size is well defined
+        """
+        self.c = np.zeros(shape=[self.size, self.nb_actions], dtype='float32')
+        for i in range(self.size):
+            self.c[i] = self.compute_counts(self.s[i])

@@ -58,15 +58,12 @@ def run(domain, config, options):
         print("\nLoading dataset from file {}".format(dataset_path), flush=True)
         if not os.path.exists(dataset_path):
             raise ValueError("The dataset file does not exist")
-        with open(dataset_path, "rb") as f:
-            data = pickle.load(f)
-        dataset = Dataset_Counts.from_data(data, params['count_param'])
-        print("Data with counts loaded: {} samples".format(len(data['s'])), flush=True)
+        dataset = Dataset_Counts.load_dataset(dataset_path)
+        print("Data with counts loaded: {} samples".format(dataset.size), flush=True)
         folder_name = os.path.dirname(dataset_path)
         expt = BatchExperiment(dataset=dataset, env=env, folder_name=folder_name, episode_max_len=params['episode_max_len'],
                                minimum_count=params['minimum_count'], extra_stochasticity=params['extra_stochasticity'],
                                history_len=params['history_len'], max_start_nullops=params['max_start_nullops'])
-
     else:
         # Create experiment folder
         if not os.path.exists(DATA_DIR):
