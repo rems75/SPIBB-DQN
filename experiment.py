@@ -1,9 +1,8 @@
 import csv
 import numpy as np
 import os
-import pickle
 import time
-from copy import deepcopy
+from tqdm import tqdm
 
 from utils import write_to_csv, plot
 
@@ -138,7 +137,11 @@ class DQNExperiment(object):
 
     def _step(self, evaluate=False):
         self.last_episode_steps += 1
-        action, policy = self.ai.get_action_and_policy(self.last_state, evaluate)
+        if self.ai.needs_state_action_counter():
+            counts = self.dataset_counter.compute_counts(self.last_state)
+        else:
+            counts = None
+        action, policy = self.ai.get_action_and_policy(self.last_state, evaluate, counts)
         new_obs, reward, game_over, _ = self.env.step(action)
         if new_obs.ndim == 1 and len(self.env.state_shape) == 2:
             new_obs = new_obs.reshape(self.env.state_shape)
@@ -148,7 +151,7 @@ class DQNExperiment(object):
                 state = self.last_state[-1].astype('float32')
             else:
                 state = self.last_state.astype('float32')
-            self.ai.transitions.add(s=state, a=action, r=reward, t=game_over)
+            # self.ai.transitions.add(s=state, a=action, r=reward, t=game_over)
             self.dataset_counter.add(s=state, a=action, r=reward, t=game_over, p=policy)
             self.total_training_steps += 1
         self._update_state(new_obs)
@@ -236,9 +239,7 @@ class BatchExperiment(object):
             begin = time.time()
             print('=' * 30, flush=True)
             print('>>>>> Epoch  ' + str(epoch) + '/' + str(number_of_epochs - 1) + '  >>>>>', flush=True)
-            for pass_on_dataset in range(passes_on_dataset):
-                if pass_on_dataset % 200 == 199:
-                    print('>>>>> Pass  ' + str(pass_on_dataset) + '/' + str(passes_on_dataset - 1) + '  >>>>>', flush=True)
+            for _ in tqdm(range(passes_on_dataset), desc=">>>>> Pass "):
                 steps = 0
                 while steps < self.dataset.size:
                     mini_batch = self.dataset.sample(self.ai.minibatch_size, full_batch=True)

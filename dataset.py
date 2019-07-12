@@ -93,12 +93,16 @@ class DataSet(object):
 class Dataset_Counts(object):
     def __init__(self, s=None, a=None, r=None, t=None, p=None, c=None,
                  count_param=1, dtype=np.float32, state_shape=None, nb_actions=2,
-                 initial_size=512, replay_max_size=100):
+                 initial_size=512, replay_max_size=100, is_counting=True):
         self.state_shape = state_shape
         self.nb_actions = nb_actions
         self.dtype = dtype
         self.count_param = count_param
         self.replay_max_size = replay_max_size
+        self.mini_batch_size = 0
+        self.instantiate_mini_batch(0)
+        self.is_counting = is_counting
+
         if s is not None:
             self.s, self.a, self.r, self.t, self.p = s, a, r, t, p
             self.size = len(self.s)
@@ -125,11 +129,11 @@ class Dataset_Counts(object):
     def similarity(x1, x2, count_param):
         return max(0, 1 - Dataset_Counts.distance(x1, x2) / count_param)
 
-    def sample(self, batch_size=1, full_batch=False):
+    def sample(self, mini_batch_size=1, full_batch=False):
         """
         return a list containing past experiences
 
-        :param batch_size: number of samples to be drawn from the dataset
+        :param mini_batch_size: number of samples to be drawn from the dataset
         :param full_batch:
             if True: samples from the full dataset
             if False: samples only from the last replay_max_size transitions
@@ -145,18 +149,38 @@ class Dataset_Counts(object):
         """
 
         # TODO avoid instantiating a new arrays for each call
-        s = np.zeros([batch_size] + [1] + list(self.state_shape), dtype=self.dtype)
-        s2 = np.zeros([batch_size] + [1] + list(self.state_shape), dtype=self.dtype)
-        t = np.zeros(batch_size, dtype='bool')
-        a = np.zeros(batch_size, dtype='int32')
-        r = np.zeros(batch_size, dtype='float32')
-        c1 = np.zeros(batch_size, dtype='float32')
-        c = np.zeros([batch_size, self.nb_actions], dtype='float32')
-        p = np.zeros([batch_size, self.nb_actions], dtype='float32')
+        if self.mini_batch_size is None or self.mini_batch_size != mini_batch_size:
+            self.instantiate_mini_batch(mini_batch_size)
+        else:
+            self.reset_mini_batch()
 
-        for i, randint in enumerate(self.sample_indexes(full_batch, batch_size)):
-            s[i], a[i], r[i], s2[i], t[i], c[i], p[i], c1[i] = self._get_transition(randint)
-        return s, a, r, s2, t, c, p, c1
+        indexes = self.sample_indexes(full_batch, mini_batch_size)
+        for i, randint in enumerate(indexes):
+            (self.mini_s[i], self.mini_a[i], self.mini_r[i], self.mini_s2[i],
+             self.mini_t[i], self.mini_c[i], self.mini_p[i], self.mini_c1[i]) = self._get_transition(randint)
+        return self.mini_s, self.mini_a, self.mini_r, self.mini_s2, self.mini_t, self.mini_c, self.mini_p, self.mini_c1
+
+    def instantiate_mini_batch(self, mini_batch_size):
+        print("instantiating mini_batch of size {}".format(mini_batch_size))
+        self.mini_batch_size = mini_batch_size
+        self.mini_s = np.zeros([mini_batch_size] + [1] + list(self.state_shape), dtype=self.dtype)
+        self.mini_s2 = np.zeros([mini_batch_size] + [1] + list(self.state_shape), dtype=self.dtype)
+        self.mini_t = np.zeros(mini_batch_size, dtype='bool')
+        self.mini_a = np.zeros(mini_batch_size, dtype='int32')
+        self.mini_r = np.zeros(mini_batch_size, dtype='float32')
+        self.mini_c1 = np.zeros(mini_batch_size, dtype='float32')
+        self.mini_c = np.zeros([mini_batch_size, self.nb_actions], dtype='float32')
+        self.mini_p = np.zeros([mini_batch_size, self.nb_actions], dtype='float32')
+
+    def reset_mini_batch(self):
+        self.mini_s.fill(0)
+        self.mini_s2.fill(0)
+        self.mini_t.fill(0)
+        self.mini_a.fill(0)
+        self.mini_r.fill(0)
+        self.mini_c1.fill(0)
+        self.mini_c.fill(0)
+        self.mini_p.fill(0)
 
     def sample_indexes(self, full_batch, size):
         if full_batch:
@@ -223,6 +247,8 @@ class Dataset_Counts(object):
         :param s:
         :param a:
         """
+        if not self.is_counting:
+            return
         # increment counters with array operations
         self.c[self.size][a] = 1
         if self.size > 0:

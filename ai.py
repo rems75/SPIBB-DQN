@@ -35,6 +35,8 @@ class AI(object):
         self.normalize = normalize
         self.learning_frequency = learning_frequency
         self.replay_max_size = replay_max_size
+        # TODO instantiate DatasetCounts instead
+        # TODO get an initial dataset for batch experiments
         self.transitions = ExperienceReplay(max_size=self.replay_max_size, history_len=history_len,
                                             state_shape=state_shape, action_dim=action_dim, reward_dim=reward_dim)
         self.ddqn = ddqn
@@ -50,6 +52,7 @@ class AI(object):
         if baseline is not None:
             self.baseline = baseline
         else:
+            # TODO use Baseline class to maintain the baseline network
             self.baseline = self._build_network()
             self.weight_transfer(from_model=self.network, to_model=self.baseline)
 
@@ -312,3 +315,6 @@ class AI(object):
         del _dict['device']  # is not picklable
         del _dict['transitions']  # huge object (if you need the replay buffer, save its contnts with np.save)
         return _dict
+
+    def needs_state_action_counter(self):
+        return self.learning_type in ["pi_b", "pi_b_hat"]
