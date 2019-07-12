@@ -183,11 +183,18 @@ class Dataset_Counts(object):
         return s, a, r, s2, t, c, p, c1
 
     def compute_counts(self, state):
-        counts = np.zeros(self.nb_actions)
-        for j in range(self.size):
-            s = Dataset_Counts.similarity(state, self.s[j], self.count_param)
-            counts[self.a[j]] += s
-        return counts
+        x, y = np.broadcast_arrays(state, self.s[0:self.size, :])
+        distance = np.linalg.norm(x - y, axis=1)
+        sim_vec = np.maximum(1 - distance / self.count_param, 0)
+        z = np.zeros((self.size, self.nb_actions))
+        z[np.arange(self.size), self.a[0:self.size]] = sim_vec
+        return z.sum(axis=0)
+
+        # counts = np.zeros(self.nb_actions)
+        # for j in range(self.size):
+        #     s = Dataset_Counts.similarity(state, self.s[j], self.count_param)
+        #     counts[self.a[j]] += s
+        # return counts
 
     def add(self, s, a, r, t, p):
         self.s[self.size] = s
@@ -216,29 +223,26 @@ class Dataset_Counts(object):
         :param s:
         :param a:
         """
-        # TODO speedup counting using avoiding iterate over array
-        # # increment counters with array operations
-        # self.c[self.size][a] = 1
-        # if self.size > 0:
-        #     # new_state_stacked = np.repeat(np.array([s], dtype=self.dtype), self.size, axis=0)
-        #     # distance = np.linalg.norm(self.s[0:self.size, :] - new_state_stacked, axis=1)
-        #     x, y = np.broadcast_arrays(s, self.s[0:self.size, :])
-        #     distance = np.linalg.norm(x - y, axis=1)
-        #     sim_vec = np.maximum(1 - distance/self.count_param, 0)
-        #     self.c[np.arange(self.size), a] += sim_vec
-        #
-        #     z = np.zeros((self.size, self.nb_actions))
-        #     z[np.arange(self.size), self.a[0:self.size]] = sim_vec
-        #     self.c[self.size] += z.sum(axis=0)
-
-        # increment counter iteratively
+        # increment counters with array operations
         self.c[self.size][a] = 1
-        for ind in range(self.size):
-            sim = Dataset_Counts.similarity(self.s[ind], s, self.count_param)
-            # increase counter of s', a in transitions of the dataset with a state s' similar to s
-            self.c[ind][a] += sim
-            # increase counter of s, a' if the dataset has a transition s', a', such that s' is similar to s
-            self.c[self.size][self.a[ind]] += sim
+        if self.size > 0:
+            x, y = np.broadcast_arrays(s, self.s[0:self.size, :])
+            distance = np.linalg.norm(x - y, axis=1)
+            sim_vec = np.maximum(1 - distance/self.count_param, 0)
+            self.c[np.arange(self.size), a] += sim_vec
+
+            z = np.zeros((self.size, self.nb_actions))
+            z[np.arange(self.size), self.a[0:self.size]] = sim_vec
+            self.c[self.size] += z.sum(axis=0)
+
+        # # increment counter iteratively
+        # self.c[self.size][a] = 1
+        # for ind in range(self.size):
+        #     sim = Dataset_Counts.similarity(self.s[ind], s, self.count_param)
+        #     # increase counter of s', a in transitions of the dataset with a state s' similar to s
+        #     self.c[ind][a] += sim
+        #     # increase counter of s, a' if the dataset has a transition s', a', such that s' is similar to s
+        #     self.c[self.size][self.a[ind]] += sim
 
     def expand(self, a):
         # allocate more memory for the array a
