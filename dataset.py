@@ -99,8 +99,7 @@ class Dataset_Counts(object):
         self.dtype = dtype
         self.count_param = count_param
         self.replay_max_size = replay_max_size
-        self.mini_batch_size = 0
-        self.instantiate_mini_batch(0)
+        self.mini_batch_size = None
         self.is_counting = is_counting
 
         if s is not None:
