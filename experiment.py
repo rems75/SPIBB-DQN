@@ -41,9 +41,11 @@ class DQNExperiment(object):
         self.extra_stochasticity = extra_stochasticity
 
         self.dataset_counter = None
+        self.steps = 0
 
     def do_epochs(self, number_of_epochs=1, steps_per_epoch=10000, is_learning=True, is_testing=True, steps_per_test=10000, **kwargs):
         best_perf = -10000
+        rewards_over_all_episodes = []
         for epoch in range(self.curr_epoch, number_of_epochs):
 
             if is_testing:
@@ -58,10 +60,10 @@ class DQNExperiment(object):
                 self.eval_scores.append(eval_scores / eval_episodes)
                 self.eval_steps.append(eval_steps / eval_episodes)
                 print('Average performance on {} episodes: {}'.format(eval_episodes, eval_scores / eval_episodes), flush=True)
-                self._plot_and_write(plot_dict={'scores': self.eval_scores}, loc=self.folder_name + "/scores",
+                self._plot_and_write(plot_dict={'eval_scores': self.eval_scores}, loc=self.folder_name + "/scores",
                                      x_label="Epochs", y_label="Mean Score", title="", kind='line', legend=True,
                                      moving_average=True)
-                self._plot_and_write(plot_dict={'steps': self.eval_steps}, loc=self.folder_name + "/steps",
+                self._plot_and_write(plot_dict={'eval_steps': self.eval_steps}, loc=self.folder_name + "/steps",
                                      x_label="Epochs", y_label="Mean Steps", title="", kind='line', legend=True)
 
                 if eval_scores / eval_episodes > best_perf:
@@ -76,15 +78,23 @@ class DQNExperiment(object):
             print('Training ...', flush=True)
             b = time.time()
             self.steps = 0
-            rewards = []
+            epoch_rewards = []
             training_episodes = 0
-            while self.steps < steps_per_epoch:
-                new_rewards = self.do_episodes(number_of_epochs=1, is_learning=is_learning)
-                rewards.extend(new_rewards)
-                training_episodes += 1
+            with tqdm(total=steps_per_epoch) as progress_bar:
+                while self.steps < steps_per_epoch:
+                    new_rewards = self.do_episodes(number_of_epochs=1, is_learning=is_learning)
+                    epoch_rewards.extend(new_rewards)
+                    training_episodes += 1
+                    progress_bar.update(self.last_episode_steps)
+
             print("Epoch ran in {:.1f} seconds".format(time.time() - b), flush=True)
             print("Epoch ran {} episodes".format(training_episodes), flush=True)
-            print("Average performance: {:.1f} ".format(np.array(rewards).mean()))
+            print("Average performance: {:.1f} ".format(np.array(epoch_rewards).mean()))
+            rewards_over_all_episodes.extend(epoch_rewards)
+            self._plot_and_write(plot_dict={'training_scores': rewards_over_all_episodes}, loc=self.folder_name + "/training_scores",
+                                 x_label="Epochs", y_label="Mean Score", title="", kind='line', legend=True,
+                                 moving_average=True)
+
 
             self.ai.anneal_eps(epoch * steps_per_epoch)
             self.ai.update_lr(epoch)
@@ -116,6 +126,7 @@ class DQNExperiment(object):
 
     # QUESTION: is_learning seems to be the opposite of evaluate, can we use only one?
     def _do_episode(self, is_learning=True, evaluate=False):
+        assert (is_learning and not evaluate) or (not is_learning and evaluate)
         rewards = []
         self._episode_reset()
         term = False
@@ -191,9 +202,9 @@ class DQNExperiment(object):
     def _plot_and_write(plot_dict, loc, x_label="", y_label="", title="", kind='line', legend=True,
                         moving_average=False):
         for key in plot_dict:
-            plot(data={key: plot_dict[key]}, loc=loc + ".pdf", x_label=x_label, y_label=y_label, title=title,
+            plot(data={key: plot_dict[key]}, loc=loc + str(key) + ".pdf", x_label=x_label, y_label=y_label, title=title,
                  kind=kind, legend=legend, index_col=None, moving_average=moving_average)
-            write_to_csv(data={key: plot_dict[key]}, loc=loc + ".csv")
+            write_to_csv(data={key: plot_dict[key]}, loc=loc + str(key) + ".csv")
 
     @staticmethod
     def _update_window(window, new_value):
