@@ -18,7 +18,7 @@ COUNTS_SUFFIX = 'counts_dataset.pkl'
 
 class Baseline(object):
 
-    def __init__(self, network_path, network_size, state_shape=[4], nb_actions=9,
+    def __init__(self, network_path, network_size, network_state=None, state_shape=[4], nb_actions=9,
                  device='cuda', seed=123, temperature=1.0, normalize=255.):
 
         self.seed = seed
@@ -29,7 +29,11 @@ class Baseline(object):
         self.temperature = temperature
         self.normalize = normalize
         self.network = self._build_network()
-        self._load_model(network_path)
+        if network_state is None:
+            self._load_model(network_path)
+        else:
+            self._copy_weight_from(network_state)
+
         print("Using soft q-values with a temperature of {}".format(temperature), flush=True)
 
     def _build_network(self):
@@ -50,7 +54,10 @@ class Baseline(object):
         if not os.path.exists(network_path):
             raise ValueError('Missing model at location {}'.format(network_path))
         print('Loading model from {}'.format(network_path), flush=True)
-        self.network.load_state_dict(torch.load(network_path))
+        self._copy_weight_from(torch.load(network_path))
+
+    def _copy_weight_from(self, state_dict):
+        self.network.load_state_dict(state_dict)
 
     def dump_network(self, weights_file_path):
         torch.save(self.network.state_dict(), weights_file_path)

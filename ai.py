@@ -4,6 +4,8 @@ from model import SmallDenseNetwork, DenseNetwork, Network, LargeNetwork, Nature
 import torch
 import torch.optim as optim
 
+from baseline import Baseline
+
 
 # Upper bound on q-values. Just used as an artefact
 MAX_Q = 100000
@@ -52,9 +54,9 @@ class AI(object):
         if baseline is not None:
             self.baseline = baseline
         else:
-            # TODO use Baseline class to maintain the baseline network
-            self.baseline = self._build_network()
-            self.weight_transfer(from_model=self.network, to_model=self.baseline)
+            self.baseline = Baseline(network_path=None, network_size=self.network_size,
+                                     network_state=self.network.state_dict(), state_shape=state_shape,
+                                     nb_actions=nb_actions, temperature=0, normalize=255., device=self.device)
 
         self.learning_type = learning_type
         self.kappa = kappa
@@ -83,7 +85,7 @@ class AI(object):
         :param a: actions
         :param r: rewards
         :param s2: next states
-        :param t: terminal signals (indicate end of trajectory)
+        :param term: terminal signals (indicate end of trajectory)
         :param c: state-action visits for the next state s2
         :param pi_b: baseline policy pi_b(a|s2) for the next state
         :param c1: state-action counter related to (s,a)
