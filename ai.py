@@ -15,7 +15,8 @@ class AI(object):
     def __init__(self, baseline, state_shape=[4], nb_actions=9, action_dim=1, reward_dim=1, history_len=1, gamma=.99,
                  learning_rate=0.00025, epsilon=0.05, final_epsilon=0.05, test_epsilon=0.0, annealing_steps=1000,
                  minibatch_size=32, replay_max_size=100, update_freq=50, learning_frequency=1, ddqn=False, learning_type='pi_b',
-                 network_size='nature', normalize=1., device=None, kappa=0.003, minimum_count=0, epsilon_soft=0):
+                 network_size='nature', normalize=1., device=None, kappa=0.003, minimum_count=0, epsilon_soft=0,
+                 baseline_update_freq=0, baseline_temp=0):
 
         self.history_len = history_len
         self.state_shape = state_shape
@@ -35,7 +36,7 @@ class AI(object):
         self.update_freq = update_freq
         self.update_counter = 0
         self.normalize = normalize
-        self.learning_frequency = learning_frequency
+        self.learning_frequency = learning_frequency  # frequency that the target network is updated
         self.replay_max_size = replay_max_size
         # TODO instantiate DatasetCounts instead
         # TODO get an initial dataset for batch experiments
@@ -56,12 +57,13 @@ class AI(object):
         else:
             self.baseline = Baseline(network_path=None, network_size=self.network_size,
                                      network_state=self.network.state_dict(), state_shape=state_shape,
-                                     nb_actions=nb_actions, temperature=0, normalize=255., device=self.device)
+                                     nb_actions=nb_actions, temperature=baseline_temp, normalize=255., device=self.device)
 
         self.learning_type = learning_type
         self.kappa = kappa
         self.minimum_count = minimum_count
         self.epsilon_soft = epsilon_soft
+        self.baseline_update_freq = baseline_update_freq
 
     def _build_network(self):
         if self.network_size == 'small':
@@ -141,6 +143,22 @@ class AI(object):
                     q2_max * torch.sum(pi_b_ * mask_non_bootstrapped, 1)  # prob mass of non_bootstrapped (s,a) pairs
                     + torch.sum(q2 * pi_b_ * (1 - mask_non_bootstrapped), 1))  # prob mass of bootstrapped (s,a) pairs
 
+        def _get_bellman_target_online_pi_b(c, pi_b_):
+            # All state/action counts for state s2
+            c = torch.FloatTensor(c).to(self.device)
+            # Policy on state s2 (estimated using softmax on the q-values)
+            pi_b_ = torch.FloatTensor(pi_b_).to(self.device)
+            # Mask for "bootstrapped actions"
+            mask_non_bootstrapped = (c >= self.minimum_count).float()
+            # print("mask_non_bootstrapped %d, bootstrapped: %d" % ((c >= self.minimum_count).float().sum(), (c < self.minimum_count).float().sum()))
+            # r + (1 - t) * gamma * max_{a s.t. (s',a) not in B}(Q'(s',a)) * proba(actions not in B)
+            #   + (1 - t) * gamma * sum(proba(a') Q'(s',a'))
+            q2_max, _ = _get_q2max(mask_non_bootstrapped)
+            # (1 - t): if terminal state does not add expected future reward
+            return r + (1 - t) * self.gamma * (
+                    q2_max * torch.sum(pi_b_ * mask_non_bootstrapped, 1)  # prob mass of non_bootstrapped (s,a) pairs
+                    + torch.sum(q2 * pi_b_ * (1 - mask_non_bootstrapped), 1))  # prob mass of bootstrapped (s,a) pairs
+
         def _get_bellman_target_soft_sort(c, pi_b):
             # All state/action counts for state s2
             c = torch.FloatTensor(c).to(self.device)
@@ -185,6 +203,9 @@ class AI(object):
             total_states_visits[term] = 1
             pi_b_hat = c / total_states_visits[:, np.newaxis]
             bellman_target = _get_bellman_target_pi_b(c, pi_b_hat)
+        elif self.learning_type == 'online_pi_b':
+            bellman_target = _get_bellman_target_online_pi_b(c, pi_b)
+
         elif self.learning_type == 'soft_sort':
             bellman_target = _get_bellman_target_soft_sort(c, pi_b)
         else:
@@ -205,7 +226,7 @@ class AI(object):
         state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
         return self.network(state / self.normalize).detach().cpu().numpy()
 
-    def get_policy_distribution(self, states, counts=[]):
+    def get_policy_distribution(self, states, counts):
         """
 
         :param states:
@@ -216,9 +237,26 @@ class AI(object):
         q_values = self.get_q(states)[0][0]
         if self.learning_type in ['pi_b', 'pi_b_hat'] and self.minimum_count > 0.0:
             mask = (counts < self.minimum_count)
+            # TODO log number of bootstrapped state-action pairs mask.sum()
             if self.learning_type == 'pi_b':
                 _, _, policy, _ = self.baseline.inference(states[0])
             elif self.learning_type == 'pi_b_hat':
+                # estimate policy according to visits counter
+                total_state_visits = counts.sum()
+                if total_state_visits > 0:
+                    policy = counts/total_state_visits
+                else:
+                    # TODO log frequency that a fully random policy is used
+                    policy = np.ones(self.nb_actions) / self.nb_actions
+            pi_b = np.multiply(mask, policy)
+            pi_b[np.argmax(q_values - mask*MAX_Q)] += np.maximum(0, 1 - np.sum(pi_b))
+            pi_b /= np.sum(pi_b)
+            return pi_b
+        elif self.learning_type in ['online_pi_b', 'online_pi_b_hat'] and self.minimum_count > 0.0:
+            mask = (counts < self.minimum_count)
+            if self.learning_type == 'online_pi_b':
+                _, _, policy, _ = self.baseline.inference(states[0])
+            else:
                 # estimate policy according to visits counter
                 total_state_visits = counts.sum()
                 if total_state_visits > 0:
@@ -258,7 +296,7 @@ class AI(object):
             dist[greedy_action] = 1
             return dist
 
-    def get_action_and_policy(self, states, evaluate, counts=[]):
+    def get_action_and_policy(self, states, evaluate, counts=None):
         # get action WITH exploration
         eps = self.epsilon if not evaluate else self.test_epsilon
 
@@ -267,7 +305,7 @@ class AI(object):
         policy_with_exploration = policy * (1.-eps) + np.ones(self.nb_actions) * eps
         policy_with_exploration /= np.sum(policy_with_exploration)
         action = np.random.choice(self.nb_actions, size=1, replace=True, p=policy_with_exploration)[0]
-        return action, policy
+        return action, policy_with_exploration
 
     def learn_on_batch(self, batch):
         objective = self.train_on_batch(*batch)
@@ -296,10 +334,6 @@ class AI(object):
         for g in self.optimizer.param_groups:
             g['lr'] = self.learning_rate
 
-    # QUESTION: can we remove this method? it does not seem to be used
-    # def update_eps(self, epoch):
-    #     self.epsilon = self.start_epsilon / (epoch + 2)
-
     def dump_network(self, weights_file_path):
         torch.save(self.network.state_dict(), weights_file_path)
 
@@ -319,4 +353,14 @@ class AI(object):
         return _dict
 
     def needs_state_action_counter(self):
-        return self.learning_type in ["pi_b", "pi_b_hat"]
+        return self.learning_type in ["pi_b", "pi_b_hat", "online_pi_b", "online_pi_b_hat"]
+
+    def try_update_baseline(self, epoch):
+        # print(">>>> Trying to update baseline")
+        if self.baseline_update_freq and epoch % self.baseline_update_freq == 0:
+            self.update_baseline()
+
+    def update_baseline(self):
+        print(">>>>> Updating baseline policy")
+        self.weight_transfer(self.network, self.baseline.network)
+        # self.baseline._copy_weight_from(self.network.state_dict())

@@ -91,7 +91,8 @@ def run(domain, config, options):
                 replay_max_size=params['replay_max_size'], update_freq=params['update_freq'],
                 learning_frequency=params['learning_frequency'], ddqn=params['ddqn'], learning_type=params['learning_type'],
                 network_size=params['network_size'], normalize=params['normalize'], device=device,
-                kappa=params['kappa'], minimum_count=params['minimum_count'], epsilon_soft=params['epsilon_soft'])
+                kappa=params['kappa'], minimum_count=params['minimum_count'], epsilon_soft=params['epsilon_soft'],
+                baseline_update_freq=params["baseline_update_freq"], baseline_temp=params["baseline_temp"])
         expt.ai = ai
         if not params['batch']:
             # resets dataset for online experiment

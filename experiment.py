@@ -1,6 +1,7 @@
 import csv
 import numpy as np
 import os
+import sys
 import time
 from tqdm import tqdm
 
@@ -53,10 +54,13 @@ class DQNExperiment(object):
                 eval_episodes = 0
                 eval_scores = 0
                 print('Evaluation ...', flush=True)
-                while eval_steps < steps_per_test:
-                    eval_scores += self.evaluate(number_of_epochs=1)
-                    eval_steps += self.last_episode_steps
-                    eval_episodes += 1
+                with tqdm(total=steps_per_test, desc=">>>>> Evaluation Step ", file=sys.stdout) as progress_bar:
+                    while eval_steps < steps_per_test:
+                        eval_scores += self.evaluate(number_of_epochs=1)
+                        eval_steps += self.last_episode_steps
+                        eval_episodes += 1
+                        progress_bar.update(self.last_episode_steps)
+
                 self.eval_scores.append(eval_scores / eval_episodes)
                 self.eval_steps.append(eval_steps / eval_episodes)
                 print('Average performance on {} episodes: {}'.format(eval_episodes, eval_scores / eval_episodes), flush=True)
@@ -80,7 +84,7 @@ class DQNExperiment(object):
             self.steps = 0
             epoch_rewards = []
             training_episodes = 0
-            with tqdm(total=steps_per_epoch) as progress_bar:
+            with tqdm(total=steps_per_epoch, desc=">>>>> Training Step ", file=sys.stdout) as progress_bar:
                 while self.steps < steps_per_epoch:
                     new_rewards = self.do_episodes(number_of_epochs=1, is_learning=is_learning)
                     epoch_rewards.extend(new_rewards)
@@ -89,7 +93,9 @@ class DQNExperiment(object):
 
             print("Epoch ran in {:.1f} seconds".format(time.time() - b), flush=True)
             print("Epoch ran {} episodes".format(training_episodes), flush=True)
-            print("Average performance: {:.1f} ".format(np.array(epoch_rewards).mean()))
+            print("Average performance during training: {:.1f} ".format(np.array(epoch_rewards).mean()))
+            # log dataset_size
+            print("Dataset has: {:.1f} transitions".format(self.dataset_counter.size))
             rewards_over_all_episodes.extend(epoch_rewards)
             self._plot_and_write(plot_dict={'training_scores': rewards_over_all_episodes}, loc=self.folder_name + "/training_scores",
                                  x_label="Epochs", y_label="Mean Score", title="", kind='line', legend=True,
@@ -98,6 +104,8 @@ class DQNExperiment(object):
 
             self.ai.anneal_eps(epoch * steps_per_epoch)
             self.ai.update_lr(epoch)
+            self.ai.try_update_baseline(epoch)
+
         print("Best performance: {}".format(best_perf), flush=True)
 
     def do_episodes(self, number_of_epochs=1, is_learning=True):
@@ -149,6 +157,7 @@ class DQNExperiment(object):
     def _step(self, evaluate=False):
         self.last_episode_steps += 1
         if self.ai.needs_state_action_counter():
+            # TODO try to reuse this counts since they are computed again when added to the dataset during training
             counts = self.dataset_counter.compute_counts(self.last_state)
         else:
             counts = None
@@ -250,7 +259,7 @@ class BatchExperiment(object):
             begin = time.time()
             print('=' * 30, flush=True)
             print('>>>>> Epoch  ' + str(epoch) + '/' + str(number_of_epochs - 1) + '  >>>>>', flush=True)
-            for _ in tqdm(range(passes_on_dataset), desc=">>>>> Pass "):
+            for _ in tqdm(range(passes_on_dataset), desc=">>>>> Pass ", file=sys.stdout):
                 steps = 0
                 while steps < self.dataset.size:
                     mini_batch = self.dataset.sample(self.ai.minibatch_size, full_batch=True)
