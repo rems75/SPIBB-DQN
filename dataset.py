@@ -160,7 +160,6 @@ class Dataset_Counts(object):
         return self.mini_s, self.mini_a, self.mini_r, self.mini_s2, self.mini_t, self.mini_c, self.mini_p, self.mini_c1
 
     def instantiate_mini_batch(self, mini_batch_size):
-        print("instantiating mini_batch of size {}".format(mini_batch_size))
         self.mini_batch_size = mini_batch_size
         self.mini_s = np.zeros([mini_batch_size] + [1] + list(self.state_shape), dtype=self.dtype)
         self.mini_s2 = np.zeros([mini_batch_size] + [1] + list(self.state_shape), dtype=self.dtype)
