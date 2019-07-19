@@ -34,6 +34,11 @@ class Environment:
             if self.env.action_space.shape == (1,):
                 self.actions = [self.env.action_space.low + i * (self.env.action_space.high - self.env.action_space.low) / (self.nb_actions - 1) for i in range(self.nb_actions)]
             self.env.seed(params['seed'])
+        elif domain == "deep_sea":
+            from environments.deep_sea import DeepSeaEnv
+            self.env = DeepSeaEnv(size=params["deep_sea_size"],
+                                  randomize=params["deep_sea_randomized"],
+                                  seed=params["seed"])
         else:
             raise ValueError('domain must be either catch or atari')
 
