@@ -11,11 +11,11 @@ To generate a dataset for the helicopter environment, run:
 
 where ``baseline/helicopter_env/`` is the path to the baseline and ``weights.pt`` is the baseline filename. The dataset will be generated in ``baseline/helicopter_env/dataset`` by default. We have provided the baseline used in our experiment in `baseline/helicopter_env`. To train a new one, define the training parameters in a yaml file e.g. `config` and run:
 
-`ipython train.py -- --domain helicopter --config config`
+`ipython train.py -- --config_file config.yaml -o domain helicopter `
 
 To train a policy on that dataset, define the training parameters in a yaml file e.g. `config_batch` (in particular, that file should contain the path to the baseline and dataset to use) and then run:
 
-`ipython train.py -- -o batch True --config config_batch`
+`ipython train.py -- -o batch True --config_file config_batch.yaml`
 
 To specify different learning types or parameters, either change the `config_batch` file or pass options to the command line, e.g. `--options learning_type ramdp`, or `--options minimum_count 5` (see the file `config_batch.yaml` for the existing options). In particular, the learning_type parameter can be regular (ie DQN), pi_b (ie SPIBB-DQN), soft_sort (ie Soft-SPIBB-DQN) or ramdp.
 
@@ -25,7 +25,7 @@ We also provide a baseline for CartPole, use the following commands to train on 
 
 `python baseline.py baseline/cartpole_env/ weights.pt --generate_dataset --dataset_size 1000`
 
-`ipython train.py -- -o batch True --config config_batch_cartpole --domain gym`.
+`ipython train.py -- -o batch True --config_file config_batch_cartpole.yaml`.
 
 
 ## Reference

@@ -11,17 +11,17 @@ from dataset import Dataset_Counts
 from environments import environment
 from baseline import Baseline
 
-@click.command()
-@click.option('--domain', '-d', default='helicopter', help="'helicopter' or 'catch' or 'atari'")
-@click.option('--config', '-c', default=None, help="config file name, if not specified, config_\{domain\}")
-@click.option('--options', '-o', multiple=True, nargs=2, type=click.Tuple([str, str]))
-def run(domain, config, options):
 
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    if not config:
-        config = 'config_' + domain
-    cfg_file = os.path.join(dir_path, config + '.yaml')
-    params = yaml.safe_load(open(cfg_file, 'r'))
+@click.command()
+@click.option('--config_file', '-c', default=None, help="config file")
+@click.option('--options', '-o', multiple=True, nargs=2, type=click.Tuple([str, str]))
+def run(config_file, options):
+    try:
+        params = yaml.safe_load(open(config_file, 'r'))
+    except FileNotFoundError as e:
+        print("Configuration file not found")
+        raise e
+
 
     # replacing params with command line options
     for opt in options:
@@ -46,7 +46,7 @@ def run(domain, config, options):
 
     DATA_DIR = os.path.join(params['folder_location'], params['folder_name'])
 
-    env = environment.Environment(domain, params, random_state)
+    env = environment.Environment(params["domain"], params, random_state)
 
     if params['batch']:
         baseline_path = os.path.join(DATA_DIR, params['baseline_path'])
