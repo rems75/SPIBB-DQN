@@ -4,13 +4,15 @@ import os
 import sys
 import time
 from tqdm import tqdm
+from tensorboardX import SummaryWriter
+from datetime import datetime
 
 from utils import write_to_csv, plot
 
 
 class DQNExperiment(object):
     def __init__(self, env, ai, episode_max_len, annealing=False, history_len=1, max_start_nullops=1, test_epsilon=0.0,
-                 replay_min_size=0, score_window_size=100, folder_location='/experiments/', folder_name='expt',
+                 replay_min_size=0, score_window_size=100, folder_name='expt',
                  saving_period=1, network_path='weights.pt', extra_stochasticity=0.0):
         self.fps = 0
         self.episode_num = 0
@@ -44,9 +46,12 @@ class DQNExperiment(object):
         self.dataset_counter = None
         self.steps = 0
 
+        self.logger = get_logger(self.folder_name)
+
     def do_epochs(self, number_of_epochs=1, steps_per_epoch=10000, is_learning=True, is_testing=True, steps_per_test=10000, **kwargs):
         best_perf = -10000
         rewards_over_all_episodes = []
+        self.ai.logger = self.logger
         for epoch in range(self.curr_epoch, number_of_epochs):
 
             if is_testing:
@@ -88,19 +93,18 @@ class DQNExperiment(object):
                 while self.steps < steps_per_epoch:
                     new_rewards = self.do_episodes(number_of_epochs=1, is_learning=is_learning)
                     epoch_rewards.extend(new_rewards)
+                    self.logger.add_scalar('episode_reward', new_rewards[0], self.total_training_steps)
                     training_episodes += 1
                     progress_bar.update(self.last_episode_steps)
 
             print("Epoch ran in {:.1f} seconds".format(time.time() - b), flush=True)
             print("Epoch ran {} episodes".format(training_episodes), flush=True)
             print("Average performance during training: {:.1f} ".format(np.array(epoch_rewards).mean()))
-            # log dataset_size
             print("Dataset has: {:.1f} transitions".format(self.dataset_counter.size))
             rewards_over_all_episodes.extend(epoch_rewards)
             self._plot_and_write(plot_dict={'training_scores': rewards_over_all_episodes}, loc=self.folder_name + "/training_scores",
                                  x_label="Epochs", y_label="Mean Score", title="", kind='line', legend=True,
                                  moving_average=True)
-
 
             self.ai.anneal_eps(epoch * steps_per_epoch)
             self.ai.update_lr(epoch)
@@ -236,6 +240,8 @@ class BatchExperiment(object):
         self.history_len = history_len
         self.extra_stochasticity = extra_stochasticity
         self.episode_max_len = episode_max_len
+        self.logger = get_logger(self.folder_name)
+
 
     def do_epochs(self, number_of_epochs=1, steps_per_test=10000, exp_id=0, passes_on_dataset=1, **kwargs):
         if self.ai.learning_type == 'soft_sort':
@@ -254,6 +260,7 @@ class BatchExperiment(object):
             os.remove(filename)
         except OSError:
             pass
+        self.ai.logger = self.logger
         total_steps, updates = 0, 0
         for epoch in range(number_of_epochs):
             begin = time.time()
@@ -338,3 +345,12 @@ class BatchExperiment(object):
 
     def _update_state(self, new_obs):
         self.last_state = new_obs
+
+
+def get_logger(folder_name):
+    now = datetime.now()
+    log_path = os.path.join('logs', folder_name, now.strftime("%Y%m%d-%H%M%S"))
+    print(log_path)
+    if not os.path.exists(log_path):
+        os.makedirs(log_path)
+    return SummaryWriter(log_path)

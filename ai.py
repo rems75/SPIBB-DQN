@@ -64,6 +64,9 @@ class AI(object):
         self.minimum_count = minimum_count
         self.epsilon_soft = epsilon_soft
         self.baseline_update_freq = baseline_update_freq
+        self.training_step = 0
+        self.interaction_step = 0  # counts interactions with the environment (during training and evaluation)
+        self.logger = None
 
     def _build_network(self):
         if self.network_size == 'small':
@@ -139,6 +142,8 @@ class AI(object):
             #   + (1 - t) * gamma * sum(proba(a') Q'(s',a'))
             q2_max, _ = _get_q2max(mask_non_bootstrapped)
             # (1 - t): if terminal state does not add expected future reward
+
+            self.logger.add_scalar('bootstrapped', torch.sum(1 - mask_non_bootstrapped).item(), self.training_step)
             return r + (1 - t) * self.gamma * (
                     q2_max * torch.sum(pi_b_ * mask_non_bootstrapped, 1)  # prob mass of non_bootstrapped (s,a) pairs
                     + torch.sum(q2 * pi_b_ * (1 - mask_non_bootstrapped), 1))  # prob mass of bootstrapped (s,a) pairs
@@ -154,6 +159,8 @@ class AI(object):
             # r + (1 - t) * gamma * max_{a s.t. (s',a) not in B}(Q'(s',a)) * proba(actions not in B)
             #   + (1 - t) * gamma * sum(proba(a') Q'(s',a'))
             q2_max, _ = _get_q2max(mask_non_bootstrapped)
+
+            self.logger.add_scalar('bootstrapped', torch.sum(1 - mask_non_bootstrapped).item(), self.training_step)
             # (1 - t): if terminal state does not add expected future reward
             return r + (1 - t) * self.gamma * (
                     q2_max * torch.sum(pi_b_ * mask_non_bootstrapped, 1)  # prob mass of non_bootstrapped (s,a) pairs
@@ -220,6 +227,8 @@ class AI(object):
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+        self.logger.add_scalar('loss', loss, self.training_step)
+        self.training_step += 1
         return loss
 
     def get_q(self, state):
@@ -237,7 +246,8 @@ class AI(object):
         q_values = self.get_q(states)[0][0]
         if self.learning_type in ['pi_b', 'pi_b_hat'] and self.minimum_count > 0.0:
             mask = (counts < self.minimum_count)
-            # TODO log number of bootstrapped state-action pairs mask.sum()
+
+            self.logger.add_scalar('bootstrapped_interaction', torch.sum(mask).item(), self.interaction_step)
             if self.learning_type == 'pi_b':
                 _, _, policy, _ = self.baseline.inference(states[0])
             elif self.learning_type == 'pi_b_hat':
@@ -245,15 +255,17 @@ class AI(object):
                 total_state_visits = counts.sum()
                 if total_state_visits > 0:
                     policy = counts/total_state_visits
+                    self.logger.add_scalar('randompolicy', 0, self.interaction_step)
                 else:
-                    # TODO log frequency that a fully random policy is used
                     policy = np.ones(self.nb_actions) / self.nb_actions
+                    self.logger.add_scalar('randompolicy', 1, self.interaction_step)
             pi_b = np.multiply(mask, policy)
             pi_b[np.argmax(q_values - mask*MAX_Q)] += np.maximum(0, 1 - np.sum(pi_b))
             pi_b /= np.sum(pi_b)
             return pi_b
         elif self.learning_type in ['online_pi_b', 'online_pi_b_hat'] and self.minimum_count > 0.0:
             mask = (counts < self.minimum_count)
+            self.logger.add_scalar('bootstrapped_interaction', torch.sum(mask).item(), self.interaction_step)
             if self.learning_type == 'online_pi_b':
                 _, _, policy, _ = self.baseline.inference(states[0])
             else:
@@ -261,8 +273,10 @@ class AI(object):
                 total_state_visits = counts.sum()
                 if total_state_visits > 0:
                     policy = counts/total_state_visits
+                    self.logger.add_scalar('randompolicy', 0, self.interaction_step)
                 else:
                     policy = np.ones(self.nb_actions) / self.nb_actions
+                    self.logger.add_scalar('randompolicy', 1, self.interaction_step)
             pi_b = np.multiply(mask, policy)
             pi_b[np.argmax(q_values - mask*MAX_Q)] += np.maximum(0, 1 - np.sum(pi_b))
             pi_b /= np.sum(pi_b)
@@ -305,6 +319,7 @@ class AI(object):
         policy_with_exploration = policy * (1.-eps) + np.ones(self.nb_actions) * eps
         policy_with_exploration /= np.sum(policy_with_exploration)
         action = np.random.choice(self.nb_actions, size=1, replace=True, p=policy_with_exploration)[0]
+        self.interaction_step += 1
         return action, policy_with_exploration
 
     def learn_on_batch(self, batch):
