@@ -151,7 +151,8 @@ class DQNExperiment(object):
             if self.dataset_counter.size >= max(self.replay_min_size, self.ai.minibatch_size) and is_learning \
                     and (self.steps % self.ai.learning_frequency) == 0:
                 mini_batch = self.dataset_counter.sample(self.ai.minibatch_size)
-                self.ai.learn_on_batch(mini_batch)
+                loss = self.ai.learn_on_batch(mini_batch)
+                self.ai.update_boltzmann_parameter(self.episode_num)
 
             if not term and self.last_episode_steps >= self.episode_max_len:
                 print('Reaching maximum number of steps in the current episode.', flush=True)
