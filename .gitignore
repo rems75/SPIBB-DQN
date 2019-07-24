@@ -130,3 +130,6 @@ dmypy.json
 *.yaml
 *.pkl
 *.pt
+
+notebooks
+logs
