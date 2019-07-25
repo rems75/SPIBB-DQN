@@ -281,7 +281,7 @@ class AI(object):
         if self.learning_type in ['pi_b', 'pi_b_hat'] and self.minimum_count > 0.0:
             mask = (counts < self.minimum_count)
 
-            self.logger.add_scalar('bootstrapped_interaction', torch.sum(mask).item(), self.interaction_step)
+            self.logger.add_scalar('bootstrapped_interaction', np.sum(mask), self.interaction_step)
             if self.learning_type == 'pi_b':
                 _, _, policy, _ = self.baseline.inference(states[0])
             elif self.learning_type == 'pi_b_hat':
@@ -299,7 +299,7 @@ class AI(object):
             return pi_b
         elif self.learning_type in ['online_pi_b', 'online_pi_b_hat', 'online_pi_b_softmax'] and self.minimum_count > 0.0:
             mask = (counts < self.minimum_count)
-            self.logger.add_scalar('bootstrapped_interaction', torch.sum(mask).item(), self.interaction_step)
+            self.logger.add_scalar('bootstrapped_interaction', np.sum(mask), self.interaction_step)
             if self.learning_type == 'online_pi_b':
                 _, _, policy, _ = self.baseline.inference(states[0])
             else:
