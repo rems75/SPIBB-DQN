@@ -218,7 +218,7 @@ class DQNExperiment(object):
         for key in plot_dict:
             plot(data={key: plot_dict[key]}, loc=loc + str(key) + ".pdf", x_label=x_label, y_label=y_label, title=title,
                  kind=kind, legend=legend, index_col=None, moving_average=moving_average)
-            write_to_csv(data={key: plot_dict[key]}, loc=loc + str(key) + ".csv")
+            write_to_csv(data={key: plot_dict[key]}, loc=loc + ".csv")
 
     @staticmethod
     def _update_window(window, new_value):
@@ -267,7 +267,7 @@ class BatchExperiment(object):
             begin = time.time()
             print('=' * 30, flush=True)
             print('>>>>> Epoch  ' + str(epoch) + '/' + str(number_of_epochs - 1) + '  >>>>>', flush=True)
-            for _ in tqdm(range(passes_on_dataset), desc=">>>>> Pass ", file=sys.stdout):
+            for _ in tqdm(range(passes_on_dataset), desc=">>>>> Pass ", file=sys.stdout, disable=True):
                 steps = 0
                 while steps < self.dataset.size:
                     mini_batch = self.dataset.sample(self.ai.minibatch_size, full_batch=True)
@@ -280,6 +280,7 @@ class BatchExperiment(object):
                         updates += 1
 
             print('>>>>> Training ran in {} seconds.'.format(time.time() - begin), flush=True)
+            print('>>>>> Start testing.', flush=True)
             begin_testing = time.time()
             if steps_per_test > 0:
                 eval_steps = 0
@@ -289,6 +290,7 @@ class BatchExperiment(object):
                     eval_scores += self.evaluate(print_score=False)
                     eval_steps += self.last_episode_steps
                     eval_episodes += 1
+            # flush(self.ai.logger)
             print('>>>>> Testing ran in {} seconds.'.format(time.time() - begin_testing), flush=True)
             print('>>>>> Average performance {}.'.format(eval_scores / eval_episodes), flush=True)
 
@@ -350,7 +352,7 @@ class BatchExperiment(object):
 
 def get_logger(folder_name):
     now = datetime.now()
-    log_path = os.path.join('logs', folder_name, now.strftime("%Y%m%d-%H%M%S"))
+    log_path = os.path.join(folder_name, 'logs', now.strftime("%Y%m%d-%H%M%S"))
     print(log_path)
     if not os.path.exists(log_path):
         os.makedirs(log_path)

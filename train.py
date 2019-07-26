@@ -1,7 +1,6 @@
 import click
 import numpy as np
 import os
-import pickle
 import torch
 import yaml
 
@@ -44,7 +43,7 @@ def run(config_file, options):
     random_state = np.random.RandomState(params['seed'])
     device = torch.device(params["device"])
 
-    DATA_DIR = os.path.join(params['folder_location'], params['folder_name'])
+    DATA_DIR = os.getenv("PT_DATA_DIR", os.path.join(params['folder_location'], params['folder_name']))
 
     env = environment.Environment(params["domain"], params, random_state)
 
@@ -60,7 +59,7 @@ def run(config_file, options):
             raise ValueError("The dataset file does not exist")
         dataset = Dataset_Counts.load_dataset(dataset_path)
         print("Data with counts loaded: {} samples".format(dataset.size), flush=True)
-        folder_name = os.path.dirname(dataset_path)
+        folder_name = os.getenv("PT_OUTPUT_DIR", os.path.dirname(dataset_path))
         expt = BatchExperiment(dataset=dataset, env=env, folder_name=folder_name, episode_max_len=params['episode_max_len'],
                                minimum_count=params['minimum_count'], extra_stochasticity=params['extra_stochasticity'],
                                history_len=params['history_len'], max_start_nullops=params['max_start_nullops'])
@@ -69,11 +68,12 @@ def run(config_file, options):
         if not os.path.exists(DATA_DIR):
             os.makedirs(DATA_DIR)
 
+        folder_name = os.getenv("PT_OUTPUT_DIR", DATA_DIR)
         baseline = None
         expt = DQNExperiment(env=env, ai=None, episode_max_len=params['episode_max_len'], annealing=params['annealing'],
                              history_len=params['history_len'], max_start_nullops=params['max_start_nullops'],
                              replay_min_size=params['replay_min_size'], test_epsilon=params['test_epsilon'],
-                             folder_name=DATA_DIR, network_path=params['network_path'], extra_stochasticity=params['extra_stochasticity'],
+                             folder_name=folder_name, network_path=params['network_path'], extra_stochasticity=params['extra_stochasticity'],
                              score_window_size=100)
 
     for ex in range(params['num_experiments']):

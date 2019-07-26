@@ -133,3 +133,6 @@ dmypy.json
 
 notebooks
 logs
+
+pt
+.ptignore

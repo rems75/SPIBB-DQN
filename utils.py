@@ -5,6 +5,7 @@ Utilities
 import logging
 import numpy as np
 import pandas as pd
+import time
 
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,19 @@ def write_to_csv(data={}, loc="data.csv"):
         df = pd.DataFrame(data=data)
         df.to_csv(loc)
 
+
+def flush(writer):
+    try:
+        path = writer.file_writer.event_writer._ev_writer._py_recordio_writer.path
+        writer.file_writer.event_writer._ev_writer._py_recordio_writer._writer.flush()
+        while True:
+            if writer.file_writer.event_writer._event_queue.empty():
+                break
+            time.sleep(0.1)
+        writer.file_writer.event_writer._ev_writer._py_recordio_writer._writer.close()
+        writer.file_writer.event_writer._ev_writer._py_recordio_writer._writer = open(path, 'ab')
+    except:
+        pass
 
 class Font:
     purple = '\033[95m'
