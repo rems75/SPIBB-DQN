@@ -267,7 +267,7 @@ class BatchExperiment(object):
             begin = time.time()
             print('=' * 30, flush=True)
             print('>>>>> Epoch  ' + str(epoch) + '/' + str(number_of_epochs - 1) + '  >>>>>', flush=True)
-            for _ in tqdm(range(passes_on_dataset), desc=">>>>> Pass ", file=sys.stdout, disable=True):
+            for _ in tqdm(range(passes_on_dataset), unit="pass", file=sys.stdout, miniters=50, maxinterval=600):
                 steps = 0
                 while steps < self.dataset.size:
                     mini_batch = self.dataset.sample(self.ai.minibatch_size, full_batch=True)

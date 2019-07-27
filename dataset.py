@@ -147,7 +147,6 @@ class Dataset_Counts(object):
         :return: c1: state-action counter (related to s,a)
         """
 
-        # TODO avoid instantiating a new arrays for each call
         if self.mini_batch_size is None or self.mini_batch_size != mini_batch_size:
             self.instantiate_mini_batch(mini_batch_size)
         else:
