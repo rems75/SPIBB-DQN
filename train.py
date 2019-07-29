@@ -62,7 +62,8 @@ def run(config_file, options):
         folder_name = os.getenv("PT_OUTPUT_DIR", os.path.dirname(dataset_path))
         expt = BatchExperiment(dataset=dataset, env=env, folder_name=folder_name, episode_max_len=params['episode_max_len'],
                                minimum_count=params['minimum_count'], extra_stochasticity=params['extra_stochasticity'],
-                               history_len=params['history_len'], max_start_nullops=params['max_start_nullops'])
+                               history_len=params['history_len'], max_start_nullops=params['max_start_nullops'],
+                               keep_all_logs=False)
     else:
         # Create experiment folder
         if not os.path.exists(DATA_DIR):
@@ -73,8 +74,9 @@ def run(config_file, options):
         expt = DQNExperiment(env=env, ai=None, episode_max_len=params['episode_max_len'], annealing=params['annealing'],
                              history_len=params['history_len'], max_start_nullops=params['max_start_nullops'],
                              replay_min_size=params['replay_min_size'], test_epsilon=params['test_epsilon'],
-                             folder_name=folder_name, network_path=params['network_path'], extra_stochasticity=params['extra_stochasticity'],
-                             score_window_size=100)
+                             folder_name=folder_name, network_path=params['network_path'],
+                             extra_stochasticity=params['extra_stochasticity'], score_window_size=100,
+                             keep_all_logs=False)
 
     for ex in range(params['num_experiments']):
         print('\n')

@@ -1,6 +1,7 @@
 import csv
 import numpy as np
 import os
+import shutil
 import sys
 import time
 from tqdm import tqdm
@@ -13,7 +14,7 @@ from utils import write_to_csv, plot
 class DQNExperiment(object):
     def __init__(self, env, ai, episode_max_len, annealing=False, history_len=1, max_start_nullops=1, test_epsilon=0.0,
                  replay_min_size=0, score_window_size=100, folder_name='expt',
-                 saving_period=1, network_path='weights.pt', extra_stochasticity=0.0):
+                 saving_period=1, network_path='weights.pt', extra_stochasticity=0.0, keep_all_logs=False):
         self.fps = 0
         self.episode_num = 0
         self.last_episode_steps = 0
@@ -46,7 +47,8 @@ class DQNExperiment(object):
         self.dataset_counter = None
         self.steps = 0
 
-        self.logger = get_logger(self.folder_name)
+        self.logger = None
+        self.keep_all_logs = keep_all_logs
 
     def do_epochs(self, number_of_epochs=1, steps_per_epoch=10000, is_learning=True, is_testing=True, steps_per_test=10000, **kwargs):
         best_perf = -10000
@@ -212,6 +214,13 @@ class DQNExperiment(object):
         else:
             self.last_state = new_obs
 
+    def _restart_logger(self):
+        if self.logger is not None:
+            self.logger.close()
+            if not self.keep_all_logs:
+                shutil.rmtree(self.logger.logdir)
+        self.logger = get_logger(self.folder_name)
+
     @staticmethod
     def _plot_and_write(plot_dict, loc, x_label="", y_label="", title="", kind='line', legend=True,
                         moving_average=False):
@@ -229,7 +238,7 @@ class DQNExperiment(object):
 
 class BatchExperiment(object):
     def __init__(self, dataset=None, env=None, ai=None, episode_max_len=1000, folder_name='/experiments',
-                 minimum_count=0, max_start_nullops=0, history_len=1, extra_stochasticity=0.0):
+                 minimum_count=0, max_start_nullops=0, history_len=1, extra_stochasticity=0.0, keep_all_logs=False):
 
         self.dataset = dataset
         self.last_episode_steps = 0
@@ -241,8 +250,8 @@ class BatchExperiment(object):
         self.history_len = history_len
         self.extra_stochasticity = extra_stochasticity
         self.episode_max_len = episode_max_len
-        self.logger = get_logger(self.folder_name)
-
+        self.logger = None
+        self.keep_all_logs = keep_all_logs
 
     def do_epochs(self, number_of_epochs=1, steps_per_test=10000, exp_id=0, passes_on_dataset=1, **kwargs):
         if self.ai.learning_type == 'soft_sort':
@@ -261,6 +270,7 @@ class BatchExperiment(object):
             os.remove(filename)
         except OSError:
             pass
+        self._restart_logger()
         self.ai.logger = self.logger
         total_steps, updates = 0, 0
         for epoch in range(number_of_epochs):
@@ -348,6 +358,13 @@ class BatchExperiment(object):
 
     def _update_state(self, new_obs):
         self.last_state = new_obs
+
+    def _restart_logger(self):
+        if self.logger is not None:
+            self.logger.close()
+            if not self.keep_all_logs:
+                shutil.rmtree(self.logger.logdir)
+        self.logger = get_logger(self.folder_name)
 
 
 def get_logger(folder_name):
