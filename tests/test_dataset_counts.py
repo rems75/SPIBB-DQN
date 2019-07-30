@@ -56,7 +56,7 @@ class TestDatasetCounts(TestCase):
             self.dataset.add(*t)
 
     def test_transition_to_same_state(self):
-        s, a, r, s2, t, c, p, c1 = self.dataset._get_transition(0)
+        s, a, _, r, s2, t, c, p, c1 = self.dataset._get_transition(0)
         self.assertSequenceAlmostEqual(s, transitions[0].s)
         self.assertEqual(a, transitions[0].a)
         self.assertAlmostEqual(r, transitions[0].r)
@@ -67,7 +67,7 @@ class TestDatasetCounts(TestCase):
         self.assertAlmostEqual(c1, 1.75)
 
     def test_transition_to_different_state(self):
-        s, a, r, s2, t, c, p, c1 = self.dataset._get_transition(1)
+        s, a, _, r, s2, t, c, p, c1 = self.dataset._get_transition(1)
         self.assertSequenceAlmostEqual(s, transitions[1].s)
         self.assertEqual(a, transitions[1].a)
         self.assertAlmostEqual(r, transitions[1].r)
@@ -79,7 +79,7 @@ class TestDatasetCounts(TestCase):
         self.assertAlmostEqual(c1, 1)
 
     def test_terminal_transition(self):
-        s, a, r, s2, t, c, p, c1 = self.dataset._get_transition(3)
+        s, a, _, r, s2, t, c, p, c1 = self.dataset._get_transition(3)
         self.assertSequenceAlmostEqual(s, transitions[3].s)
         self.assertEqual(a, transitions[3].a)
         self.assertAlmostEqual(r, transitions[3].r)

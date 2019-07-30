@@ -139,11 +139,12 @@ class Dataset_Counts(object):
 
         :return: s: states
         :return: a: actions
+        :return: pi: baseline policy for the current state
         :return: r: rewards
         :return: s2: next states
         :return: t: terminal signals (indicate end of trajectory)
         :return: c: state-action visits for the next state s2
-        :return: pi_b: baseline policy pi_b(a|s2) for the next state
+        :return: pi2: baseline policy pi_b(a|s2) for the next state
         :return: c1: state-action counter (related to s,a)
         """
 
@@ -154,9 +155,9 @@ class Dataset_Counts(object):
 
         indexes = self.sample_indexes(full_batch, mini_batch_size)
         for i, randint in enumerate(indexes):
-            (self.mini_s[i], self.mini_a[i], self.mini_r[i], self.mini_s2[i],
-             self.mini_t[i], self.mini_c[i], self.mini_p[i], self.mini_c1[i]) = self._get_transition(randint)
-        return self.mini_s, self.mini_a, self.mini_r, self.mini_s2, self.mini_t, self.mini_c, self.mini_p, self.mini_c1
+            (self.mini_s[i], self.mini_a[i], self.mini_p[i], self.mini_r[i], self.mini_s2[i],
+             self.mini_t[i], self.mini_c[i], self.mini_p2[i], self.mini_c1[i]) = self._get_transition(randint)
+        return self.mini_s, self.mini_a, self.mini_p, self.mini_r, self.mini_s2, self.mini_t, self.mini_c, self.mini_p2, self.mini_c1
 
     def instantiate_mini_batch(self, mini_batch_size):
         self.mini_batch_size = mini_batch_size
@@ -168,6 +169,7 @@ class Dataset_Counts(object):
         self.mini_c1 = np.zeros(mini_batch_size, dtype='float32')
         self.mini_c = np.zeros([mini_batch_size, self.nb_actions], dtype='float32')
         self.mini_p = np.zeros([mini_batch_size, self.nb_actions], dtype='float32')
+        self.mini_p2 = np.zeros([mini_batch_size, self.nb_actions], dtype='float32')
 
     def reset_mini_batch(self):
         self.mini_s.fill(0)
@@ -178,6 +180,7 @@ class Dataset_Counts(object):
         self.mini_c1.fill(0)
         self.mini_c.fill(0)
         self.mini_p.fill(0)
+        self.mini_p2.fill(0)
 
     def sample_indexes(self, full_batch, size):
         if full_batch:
@@ -192,16 +195,17 @@ class Dataset_Counts(object):
         a = self.a[ind]
         r = self.r[ind]
         t = self.t[ind]
+        p = self.p[ind]
         if not t:
             s2 = self.s[ind + 1]
             c = self.c[ind + 1]
-            p = self.p[ind + 1]
+            p2 = self.p[ind + 1]
         else:
             s2 = np.zeros(self.state_shape)
             c = np.zeros(self.nb_actions)
-            p = np.zeros(self.nb_actions)
+            p2 = np.zeros(self.nb_actions)
         c1 = self.c[ind][self.a[ind]]
-        return s, a, r, s2, t, c, p, c1
+        return s, a, p, r, s2, t, c, p2, c1
 
     def compute_counts(self, state):
         x, y = np.broadcast_arrays(state, self.s[0:self.size, :])

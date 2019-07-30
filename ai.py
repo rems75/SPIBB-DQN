@@ -83,7 +83,7 @@ class AI(object):
         else:
             raise ValueError('Invalid network_size.')
 
-    def train_on_batch(self, s, a, r, s2, term, c=None, pi_b=None, c1=None):
+    def train_on_batch(self, s, a, _, r, s2, term, c=None, pi_b=None, c1=None):
         """
         each parameter is a list containing past experiences
 
