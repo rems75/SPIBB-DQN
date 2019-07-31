@@ -148,16 +148,17 @@ class Dataset_Counts(object):
         :return: c1: state-action counter (related to s,a)
         """
 
-        if self.mini_batch_size is None or self.mini_batch_size != mini_batch_size:
-            self.instantiate_mini_batch(mini_batch_size)
-        else:
-            self.reset_mini_batch()
-
+        # if self.mini_batch_size is None or self.mini_batch_size != mini_batch_size:
+        #     self.instantiate_mini_batch(mini_batch_size)
+        # else:
+        #     self.reset_mini_batch()
+        #
         indexes = self.sample_indexes(full_batch, mini_batch_size)
-        for i, randint in enumerate(indexes):
-            (self.mini_s[i], self.mini_a[i], self.mini_p[i], self.mini_r[i], self.mini_s2[i],
-             self.mini_t[i], self.mini_c[i], self.mini_p2[i], self.mini_c1[i]) = self._get_transition(randint)
-        return self.mini_s, self.mini_a, self.mini_p, self.mini_r, self.mini_s2, self.mini_t, self.mini_c, self.mini_p2, self.mini_c1
+        # for i, randint in enumerate(indexes):
+        #     (self.mini_s[i], self.mini_a[i], self.mini_p[i], self.mini_r[i], self.mini_s2[i],
+        #      self.mini_t[i], self.mini_c[i], self.mini_p2[i], self.mini_c1[i]) = self._get_transition(randint)
+        # return self.mini_s, self.mini_a, self.mini_p, self.mini_r, self.mini_s2, self.mini_t, self.mini_c, self.mini_p2, self.mini_c1
+        return self._get_mini_batch_at_indexes(mini_batch_size, indexes)
 
     def instantiate_mini_batch(self, mini_batch_size):
         self.mini_batch_size = mini_batch_size
@@ -310,3 +311,33 @@ class Dataset_Counts(object):
         self.c = np.zeros(shape=[self.size, self.nb_actions], dtype='float32')
         for i in range(self.size):
             self.c[i] = self.compute_counts(self.s[i])
+
+    def train_test_split(self, test_size=0.2):
+        half = int(self.size * (1 - test_size))
+        indexes = np.arange(self.size)
+        np.random.shuffle(indexes)
+        training_indexes = indexes[0:half]
+        testing_indexes = indexes[half:]
+        return (Dataset_Counts(
+                    s=self.s[training_indexes], a=self.a[training_indexes], r=self.r[training_indexes],
+                    t=self.t[training_indexes], p=self.p[training_indexes], c=self.c[training_indexes],
+                    count_param=self.count_param, dtype=self.dtype, state_shape=self.state_shape,
+                    nb_actions=self.nb_actions),
+                Dataset_Counts(
+                    s=self.s[testing_indexes], a=self.a[testing_indexes], r=self.r[testing_indexes],
+                    t=self.t[testing_indexes], p=self.p[testing_indexes], c=self.c[testing_indexes],
+                    count_param=self.count_param, dtype=self.dtype, state_shape=self.state_shape,
+                    nb_actions=self.nb_actions))
+
+    def _get_mini_batch_at_indexes(self, mini_batch_size, indexes):
+        if self.mini_batch_size is None or self.mini_batch_size != mini_batch_size:
+            self.instantiate_mini_batch(mini_batch_size)
+        else:
+            self.reset_mini_batch()
+        for i, randint in enumerate(indexes):
+            (self.mini_s[i], self.mini_a[i], self.mini_p[i], self.mini_r[i], self.mini_s2[i],
+             self.mini_t[i], self.mini_c[i], self.mini_p2[i], self.mini_c1[i]) = self._get_transition(randint)
+        return self.mini_s, self.mini_a, self.mini_p, self.mini_r, self.mini_s2, self.mini_t, self.mini_c, self.mini_p2, self.mini_c1
+
+    def get_all_data(self):
+        return self._get_mini_batch_at_indexes(self.size, np.arange(0, self.size))
