@@ -125,8 +125,8 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
             target = torch.LongTensor(a).to(device)  # NLLLoss gets the indexes of the correct class as input
 
             # get predictions
-            log_probabilities = network.forward(batch_states)
-            estimated_probabilities = network.get_probabilities(batch_states)
+            estimated_probabilities, log_probabilities = network.forward(batch_states)
+
             # compute losses
             loss = nll_loss_function(log_probabilities, target)
 
@@ -236,20 +236,14 @@ class SmallDensePolicyNetwork(nn.Module):
             ('linear_3', nn.Linear(8, 4)),
             ('relu_1', nn.ReLU()),
             ('linear_3', nn.Linear(4, nb_actions)),
-            ('log_softmax_1', nn.LogSoftmax(dim=1))
+            ('softmax_1', nn.Softmax(dim=1))
         ]))
         self.fc.apply(init_weights)
         super(SmallDensePolicyNetwork, self).to(device)
 
     def forward(self, x):
-        return x
-
-    def get_probabilities(self, x):
-        with torch.no_grad():
-            for l in list(self.fc.children())[:-1]:
-                x = l(x)
-            x = self.fc(x)
-            return F.softmax(x, dim=1)
+        x = self.fc(x)
+        return x, torch.log(x)
 
 
 class DensePolicyNetwork(nn.Module):
@@ -264,21 +258,14 @@ class DensePolicyNetwork(nn.Module):
             ('linear_3', nn.Linear(128, 32)),
             ('relu_3', nn.ReLU()),
             ('linear_4', nn.Linear(32, nb_actions)),
-            ('log_softmax_1', nn.LogSoftmax(dim=1))
+            ('softmax_1', nn.Softmax(dim=1))
         ]))
         self.fc.apply(init_weights)
         super(DensePolicyNetwork, self).to(device)
 
     def forward(self, x):
         x = self.fc(x)
-        return x
-
-    def get_probabilities(self, x):
-        with torch.no_grad():
-            for l in list(self.fc.children())[:-1]:
-                x = l(x)
-            result = F.softmax(x, dim=1)
-        return result
+        return x, torch.log(x)
 
 
 def _build_network(network_size, state_shape, nb_actions, device):
