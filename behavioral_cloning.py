@@ -10,6 +10,7 @@ from environments import environment
 from collections import OrderedDict
 from torch import nn
 from torch.nn import functional as F
+from torch import distributions
 from dataset import Dataset_Counts
 from tensorboardX import SummaryWriter
 
@@ -125,13 +126,13 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
 
             # get predictions
             log_probabilities = network.forward(batch_states)
-            # compute loss
+            estimated_probabilities = network.get_probabilities(batch_states)
+            # compute losses
             loss = nll_loss_function(log_probabilities, target)
 
             if step % log_frequency == 0:
                 with torch.no_grad():
-                    # get estimated prob from network
-                    estimated_probabilities = network.get_probabilities(batch_states)
+
 
                     # makes an one-hot vector for the action
                     one_hot_behavior_policy = np.zeros(list(a.shape) + [nb_actions])
@@ -143,13 +144,10 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
 
                     # compute MSE with true policy
                     behavior_policy = torch.FloatTensor(behavior_policy).to(device)
-
                     mse_loss_true_policy = F.mse_loss(estimated_probabilities, behavior_policy)
 
-                    log_pi = torch.log(behavior_policy)
-                    log_pi[log_pi == -float('inf')] = 0  # avoid NaN when behavior_policy = 0
-                    policy_entropy = -torch.mean(torch.sum(behavior_policy * log_pi, dim=1))
-
+                    # compute entropy of the behavior policy
+                    behavior_policy_entropy = torch.mean(distributions.Categorical(behavior_policy).entropy())
 
                 s = 'step {:7d}, training accuracy: '
                 s += 'negative log likelihood{:7.3f}, '
@@ -157,11 +155,11 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
                 s += 'mse pi {:7.6f} '
                 s += 'normalized loss {:7.6f} '
                 total_steps = current_epoch * training_steps + step
-                print(s.format(total_steps, loss.item(), mse_loss.item(), mse_loss_true_policy.item(), loss.item() - policy_entropy.item()))
+                print(s.format(total_steps, loss.item(), mse_loss.item(), mse_loss_true_policy.item(), loss.item() - behavior_policy_entropy.item()))
                 logger.add_scalar("training/mse_a", mse_loss.item(), total_steps)
                 logger.add_scalar("training/mse_pi_b", mse_loss_true_policy.item(), total_steps)
                 logger.add_scalar("training/total_loss", loss.item(), total_steps)
-                logger.add_scalar("training/training_loss_minus_entropy", loss.item() - policy_entropy.item(), total_steps)
+                logger.add_scalar("training/training_loss_minus_entropy", loss.item() - behavior_policy_entropy.item(), total_steps)
 
 
             # update weights
@@ -248,6 +246,8 @@ class SmallDensePolicyNetwork(nn.Module):
 
     def get_probabilities(self, x):
         with torch.no_grad():
+            for l in list(self.fc.children())[:-1]:
+                x = l(x)
             x = self.fc(x)
             return F.softmax(x, dim=1)
 
