@@ -47,6 +47,8 @@ from utils import flush
               default=123)
 @click.option('--learning_rate',
               default=0.1)
+@click.option('--entropy_coefficient',
+              default=0.0)
 @click.option('--experiment_name',
               default="")
 @click.option('--config_file',
@@ -56,6 +58,7 @@ from utils import flush
 def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learning_rate, number_of_epochs, network_size,
                            folder_location, dataset_file, network_path,
                            state_shape, nb_actions, sample_from_env,
+                           entropy_coefficient,
                            device, seed, experiment_name, config_file):
     # initialize seeds for reproducibility
     np.random.seed(seed)
@@ -125,14 +128,21 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
             target = torch.LongTensor(a).to(device)  # NLLLoss gets the indexes of the correct class as input
 
             # get predictions
-            estimated_probabilities, log_probabilities = network.forward(batch_states)
+            estimated_policy = network.forward(batch_states)
 
-            # compute losses
-            loss = nll_loss_function(log_probabilities, target)
+            # computing losses
+            # negative loglikelihood
+            nll_loss = nll_loss_function(torch.log(estimated_policy), target)
+
+            # policy entropy
+            estimated_policy_entropy = torch.mean(distributions.Categorical(estimated_policy).entropy())
+            # regularize entropy
+            entropy_bonus = entropy_coefficient * estimated_policy_entropy
+
+            total_loss = nll_loss - entropy_bonus
 
             if step % log_frequency == 0:
                 with torch.no_grad():
-
 
                     # makes an one-hot vector for the action
                     one_hot_behavior_policy = np.zeros(list(a.shape) + [nb_actions])
@@ -140,11 +150,11 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
                     one_hot_behavior_policy = torch.FloatTensor(one_hot_behavior_policy).to(device)
 
                     # compute MSE loss of estimated probability with one_hot policy
-                    mse_loss = F.mse_loss(estimated_probabilities, one_hot_behavior_policy)
+                    mse_loss = F.mse_loss(estimated_policy, one_hot_behavior_policy)
 
                     # compute MSE with true policy
                     behavior_policy = torch.FloatTensor(behavior_policy).to(device)
-                    mse_loss_true_policy = F.mse_loss(estimated_probabilities, behavior_policy)
+                    mse_loss_true_policy = F.mse_loss(estimated_policy, behavior_policy)
 
                     # compute entropy of the behavior policy
                     behavior_policy_entropy = torch.mean(distributions.Categorical(behavior_policy).entropy())
@@ -155,15 +165,19 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
                 s += 'mse pi {:7.6f} '
                 s += 'normalized loss {:7.6f} '
                 total_steps = current_epoch * training_steps + step
-                print(s.format(total_steps, loss.item(), mse_loss.item(), mse_loss_true_policy.item(), loss.item() - behavior_policy_entropy.item()))
+                print(s.format(total_steps, total_loss.item(), mse_loss.item(), mse_loss_true_policy.item(), total_loss.item() - behavior_policy_entropy.item()))
                 logger.add_scalar("training/mse_a", mse_loss.item(), total_steps)
                 logger.add_scalar("training/mse_pi_b", mse_loss_true_policy.item(), total_steps)
-                logger.add_scalar("training/total_loss", loss.item(), total_steps)
-                logger.add_scalar("training/training_loss_minus_entropy", loss.item() - behavior_policy_entropy.item(), total_steps)
+                logger.add_scalar("training/total_loss", total_loss.item(), total_steps)
+                logger.add_scalar("training/nll_loss", nll_loss.item(), total_steps)
+                logger.add_scalar("training/policy_entropy", estimated_policy_entropy.item(), total_steps)
+                logger.add_scalar("training/entropy_bonus", entropy_bonus.item(), total_steps)
+
+                logger.add_scalar("training/training_loss_minus_entropy", total_loss.item() - behavior_policy_entropy.item(), total_steps)
 
 
             # update weights
-            loss.backward()
+            total_loss.backward()
             optimizer.step()
 
         # log loss
@@ -183,9 +197,9 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
 
             with torch.no_grad():
                 # get predictions
-                log_probabilities = network.forward(batch_states)
+                estimated_policy = network.forward(batch_states)
                 # compute loss
-                loss = nll_loss_function(log_probabilities, target)
+                loss = nll_loss_function(torch.log(estimated_policy), target)
             total_loss += loss.item()
         average_loss = total_loss/training_steps
         if average_loss < smaller_testing_loss:
@@ -243,7 +257,7 @@ class SmallDensePolicyNetwork(nn.Module):
 
     def forward(self, x):
         x = self.fc(x)
-        return x, torch.log(x)
+        return x
 
 
 class DensePolicyNetwork(nn.Module):
@@ -265,7 +279,7 @@ class DensePolicyNetwork(nn.Module):
 
     def forward(self, x):
         x = self.fc(x)
-        return x, torch.log(x)
+        return x
 
 
 def _build_network(network_size, state_shape, nb_actions, device):
