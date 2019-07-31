@@ -49,17 +49,13 @@ from utils import flush
 @click.option('--experiment_name',
               default="")
 @click.option('--config_file',
-              default='config.yaml')
+              default='config.yaml',
+              help="config file to instantiate env and baseline to train sampling from environment")
+@click.option('--sample_from_env', is_flag=True)
 def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learning_rate, number_of_epochs, network_size,
                            folder_location, dataset_file, network_path,
-                           state_shape, nb_actions,
+                           state_shape, nb_actions, sample_from_env,
                            device, seed, experiment_name, config_file):
-    try:
-        params = yaml.safe_load(open(config_file, 'r'))
-    except FileNotFoundError as e:
-        print("Configuration file not found")
-        raise e
-
     # initialize seeds for reproducibility
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -67,51 +63,60 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
     data_dir = os.getenv("PT_DATA_DIR", os.path.join(folder_location))
     dataset_path = os.path.join(data_dir, dataset_file)
     network_path = os.path.join(os.path.dirname(dataset_path), network_path)
-    baseline_network_path = os.path.join(data_dir, params["network_path"])
 
     logger = SummaryWriter(out_folder)
 
     # import data
-    dataset = Dataset_Counts.load_dataset(dataset_path)
-    dataset_train, dataset_test = dataset.train_test_split(test_size=0.2)
+    full_dataset = Dataset_Counts.load_dataset(dataset_path)
+    dataset_train, dataset_test = full_dataset.train_test_split(test_size=0.2)
 
     # create model
     network = _build_network(network_size, state_shape, nb_actions, device)
 
     # define loss and optimizer
 
-    loss_function = nn.NLLLoss()
+    nll_loss_function = nn.NLLLoss()
     optimizer = torch.optim.SGD(network.parameters(), lr=learning_rate)
     # optimizer = torch.optim.RMSprop(network.parameters(), lr=learning_rate, alpha=0.95, eps=1e-07)
 
-    smaller_loss = float('inf')
+    smaller_testing_loss = float('inf')
 
-    baseline = Baseline(baseline_network_path,
-                        params['network_size'],
-                        state_shape=params['state_shape'], nb_actions=params['nb_actions'],
-                        seed=seed, temperature=2,
-                        device=device, normalize=params['normalize'])
+    if sample_from_env:
+        print("sampling from environment")
+        try:
+            params = yaml.safe_load(open(config_file, 'r'))
+        except FileNotFoundError as e:
+            print("Configuration file not found; Define a config_file to be able to sample from environment")
+            raise e
+        baseline_network_path = os.path.join(data_dir, params["network_path"])
+        baseline = Baseline(baseline_network_path,
+                            params['network_size'],
+                            state_shape=params['state_shape'], nb_actions=params['nb_actions'],
+                            seed=seed, temperature=params.get("baseline_temp", 0.1),
+                            device=device, normalize=params['normalize'])
 
-    env = environment.Environment(params['domain'], params)
+        env = environment.Environment(params['domain'], params)
+    else:
+        baseline, env = None, None
 
-    def train(data, current_epoch=0, log_frequency=200, fixed_dataset=False):
+    def train(data, current_epoch=0, log_frequency=200):
         for step in range(training_steps):
             # clear gradients
             optimizer.zero_grad()
 
             # sample mini_batch
-            if fixed_dataset:
-                s, a, pi, r, s2, t, c, pi2, cl = data.sample(mini_batch_size=mini_batch_size, full_batch=True)
+            if not sample_from_env:
+                s, a, behavior_policy, _, _, _, _, _, _ = data.sample(mini_batch_size=mini_batch_size, full_batch=True)
             else:
                 # sanity check: train on new samples instead of fixed dataset
-                dataset = Dataset_Counts(state_shape=params['state_shape'], nb_actions=params['nb_actions'],
-                                         count_param=0.2)
-                while dataset.size < mini_batch_size:
+                mini_batch = Dataset_Counts(state_shape=params['state_shape'], nb_actions=params['nb_actions'],
+                                            count_param=0.2)
+                while mini_batch.size < mini_batch_size:
                     state = env.reset()
-                    action, qfunction, policy, _ = baseline.inference(state)
-                    new_obs, new_reward, term, _ = env.step(action)
-                    dataset.add(s=state.astype('float32'), a=action, r=new_reward, t=term, p=policy)
-                s, a, pi, r, s2, t, c, pi2, cl = dataset.get_all_data()
+                    action, _, policy, _ = baseline.inference(state)
+                    _, new_reward, term, _ = env.step(action)
+                    mini_batch.add(s=state.astype('float32'), a=action, r=new_reward, t=term, p=policy)
+                s, a, behavior_policy, _, _, _, _, _, _ = mini_batch.get_all_data()
 
             # prepare tensors
             batch_states = torch.FloatTensor(s).to(device)
@@ -121,29 +126,29 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
             # get predictions
             log_probabilities = network.forward(batch_states)
             # compute loss
-            loss = loss_function(log_probabilities, target)
+            loss = nll_loss_function(log_probabilities, target)
 
             if step % log_frequency == 0:
                 with torch.no_grad():
                     # get estimated prob from network
-                    probabilities = network.get_probabilities(batch_states)
+                    estimated_probabilities = network.get_probabilities(batch_states)
 
                     # makes an one-hot vector for the action
-                    policy = np.zeros(list(a.shape) + [nb_actions])
-                    policy[np.arange(len(a)), a] = 1
-                    one_hot_prob = torch.FloatTensor(policy).to(device)
+                    one_hot_behavior_policy = np.zeros(list(a.shape) + [nb_actions])
+                    one_hot_behavior_policy[np.arange(len(a)), a] = 1
+                    one_hot_behavior_policy = torch.FloatTensor(one_hot_behavior_policy).to(device)
 
                     # compute MSE loss of estimated probability with one_hot policy
-                    mse_loss = F.mse_loss(probabilities, one_hot_prob)
+                    mse_loss = F.mse_loss(estimated_probabilities, one_hot_behavior_policy)
 
                     # compute MSE with true policy
-                    pi = torch.FloatTensor(pi).to(device)
+                    behavior_policy = torch.FloatTensor(behavior_policy).to(device)
 
-                    mse_loss_true_policy = F.mse_loss(probabilities, pi)
+                    mse_loss_true_policy = F.mse_loss(estimated_probabilities, behavior_policy)
 
-                    log_pi = torch.log(pi)
-                    log_pi[log_pi == -float('inf')] = 0
-                    policy_entropy = -torch.mean(torch.sum(pi * log_pi, dim=1))
+                    log_pi = torch.log(behavior_policy)
+                    log_pi[log_pi == -float('inf')] = 0  # avoid NaN when behavior_policy = 0
+                    policy_entropy = -torch.mean(torch.sum(behavior_policy * log_pi, dim=1))
 
 
                 s = 'step {:7d}, training accuracy: '
@@ -153,10 +158,10 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
                 s += 'normalized loss {:7.6f} '
                 total_steps = current_epoch * training_steps + step
                 print(s.format(total_steps, loss.item(), mse_loss.item(), mse_loss_true_policy.item(), loss.item() - policy_entropy.item()))
-                logger.add_scalar("losses/training_square_loss_a", mse_loss.item(), total_steps)
-                logger.add_scalar("losses/training_square_loss_pi_b", mse_loss_true_policy.item(), total_steps)
-                logger.add_scalar("losses/training_loss", loss.item(), total_steps)
-                logger.add_scalar("losses/training_loss_minus_entropy", loss.item() - policy_entropy.item(), total_steps)
+                logger.add_scalar("training/mse_a", mse_loss.item(), total_steps)
+                logger.add_scalar("training/mse_pi_b", mse_loss_true_policy.item(), total_steps)
+                logger.add_scalar("training/total_loss", loss.item(), total_steps)
+                logger.add_scalar("training/training_loss_minus_entropy", loss.item() - policy_entropy.item(), total_steps)
 
 
             # update weights
@@ -182,16 +187,16 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
                 # get predictions
                 log_probabilities = network.forward(batch_states)
                 # compute loss
-                loss = loss_function(log_probabilities, target)
+                loss = nll_loss_function(log_probabilities, target)
             total_loss += loss.item()
         average_loss = total_loss/training_steps
-        if average_loss < smaller_loss:
+        if average_loss < smaller_testing_loss:
             dump_network(network, network_path)
 
         s = 'epoch {:7d}, testing accuracy: '
         s += 'negative log likelihood{:7.3f}, '
         print(s.format(current_epoch, average_loss))
-        logger.add_scalar("losses/testing/neg_log_likelihood", loss.item(), current_epoch)
+        logger.add_scalar("testing/neg_log_likelihood", loss.item(), current_epoch)
 
         dump_network(network, network_path)
 
