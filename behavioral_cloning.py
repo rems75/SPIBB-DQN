@@ -25,6 +25,8 @@ from utils import flush
               default=2000)
 @click.option('--mini_batch_size',
               default=32)
+@click.option('--evaluation_episodes',
+              default=1000)
 @click.option('--learning_rate',
               default=0.01,
               help="learning rate for optimizer")
@@ -54,7 +56,8 @@ from utils import flush
               default='config.yaml',
               help="config file to instantiate env and baseline to train sampling from environment")
 @click.option('--sample_from_env', is_flag=True)
-def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learning_rate, number_of_epochs, network_size,
+def train_behavior_cloning(training_steps, testing_steps, evaluation_episodes,
+                           mini_batch_size, learning_rate,  number_of_epochs, network_size,
                            folder_location, dataset_file, network_path,
                            state_shape, nb_actions, sample_from_env,
                            entropy_coefficient,
@@ -158,7 +161,7 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
 
                     # compute entropy of the behavior policy
                     behavior_policy_entropy = torch.mean(distributions.Categorical(behavior_policy).entropy())
-                performance = evaluate_policy(policy=network, env=env, number_of_episodes=10, device=device)
+                performance = evaluate_policy(policy=network, env=env, number_of_episodes=evaluation_episodes, device=device)
 
                 # logging stats
                 s = 'step {:7d}, training: '
