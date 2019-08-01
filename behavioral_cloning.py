@@ -5,7 +5,6 @@ import yaml
 
 import numpy as np
 
-from collections import OrderedDict
 from torch import nn
 from torch.nn import functional as F
 from torch import distributions
@@ -267,14 +266,14 @@ class SmallDensePolicyNetwork(nn.Module):
     def __init__(self, state_shape, nb_actions, device):
         super(SmallDensePolicyNetwork, self).__init__()
 
-        self.fc = nn.Sequential(OrderedDict([
-            ('linear_1', nn.Linear(state_shape, 8)),
-            ('relu_1', nn.ReLU()),
-            ('linear_3', nn.Linear(8, 4)),
-            ('relu_1', nn.ReLU()),
-            ('linear_3', nn.Linear(4, nb_actions)),
-            ('softmax_1', nn.Softmax(dim=1))
-        ]))
+        self.fc = nn.Sequential(
+            nn.Linear(state_shape, 8),
+            nn.ReLU(),
+            nn.Linear(8, 4),
+            nn.ReLU(),
+            nn.Linear(4, nb_actions),
+            nn.Softmax(dim=1)
+        )
         self.fc.apply(init_weights)
         super(SmallDensePolicyNetwork, self).to(device)
 
@@ -287,16 +286,16 @@ class DensePolicyNetwork(nn.Module):
     def __init__(self, state_shape, nb_actions, device):
         super(DensePolicyNetwork, self).__init__()
 
-        self.fc = nn.Sequential(OrderedDict([
-            ('linear_1', nn.Linear(state_shape, 32)),
-            ('relu_1', nn.ReLU()),
-            ('linear_2', nn.Linear(32, 128)),
-            ('relu_2', nn.ReLU()),
-            ('linear_3', nn.Linear(128, 32)),
-            ('relu_3', nn.ReLU()),
-            ('linear_4', nn.Linear(32, nb_actions)),
-            ('softmax_1', nn.Softmax(dim=1))
-        ]))
+        self.fc = nn.Sequential(
+            nn.Linear(state_shape, 32),
+            nn.ReLU(),
+            nn.Linear(32, 128),
+            nn.ReLU(),
+            nn.Linear(128, 32),
+            nn.ReLU(),
+            nn.Linear(32, nb_actions),
+            nn.Softmax(dim=1)
+        )
         self.fc.apply(init_weights)
         super(DensePolicyNetwork, self).to(device)
 
