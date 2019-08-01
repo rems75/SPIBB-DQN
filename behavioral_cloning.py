@@ -85,13 +85,17 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
 
     smaller_testing_loss = float('inf')
 
+
+    # instantiate environment for policy evaluation
+    print("sampling from environment")
+    try:
+        params = yaml.safe_load(open(config_file, 'r'))
+    except FileNotFoundError as e:
+        print("Configuration file not found; Define a config_file to be able to sample from environment")
+        raise e
+    env = environment.Environment(params['domain'], params)
+
     if sample_from_env:
-        print("sampling from environment")
-        try:
-            params = yaml.safe_load(open(config_file, 'r'))
-        except FileNotFoundError as e:
-            print("Configuration file not found; Define a config_file to be able to sample from environment")
-            raise e
         baseline_network_path = os.path.join(data_dir, params["network_path"])
         baseline = Baseline(baseline_network_path,
                             params['network_size'],
@@ -99,9 +103,8 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
                             seed=seed, temperature=params.get("baseline_temp", 0.1),
                             device=device, normalize=params['normalize'])
 
-        env = environment.Environment(params['domain'], params)
     else:
-        baseline, env = None, None
+        baseline = None
 
     def train(data, current_epoch=0, log_frequency=200):
         for step in range(training_steps):
@@ -158,6 +161,7 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
 
                     # compute entropy of the behavior policy
                     behavior_policy_entropy = torch.mean(distributions.Categorical(behavior_policy).entropy())
+                performance = evaluate_policy(policy=network, env=env, number_of_episodes=10, device=device)
 
                 s = 'step {:7d}, training accuracy: '
                 s += 'negative log likelihood{:7.3f}, '
@@ -166,15 +170,15 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
                 s += 'normalized loss {:7.6f} '
                 total_steps = current_epoch * training_steps + step
                 print(s.format(total_steps, total_loss.item(), mse_loss.item(), mse_loss_true_policy.item(), total_loss.item() - behavior_policy_entropy.item()))
-                logger.add_scalar("training/mse_a", mse_loss.item(), total_steps)
-                logger.add_scalar("training/mse_pi_b", mse_loss_true_policy.item(), total_steps)
                 logger.add_scalar("training/total_loss", total_loss.item(), total_steps)
                 logger.add_scalar("training/nll_loss", nll_loss.item(), total_steps)
-                logger.add_scalar("training/policy_entropy", estimated_policy_entropy.item(), total_steps)
                 logger.add_scalar("training/entropy_bonus", entropy_bonus.item(), total_steps)
+                logger.add_scalar("training/nll_loss_minus_entropy", total_loss.item() - behavior_policy_entropy.item(), total_steps)
 
-                logger.add_scalar("training/training_loss_minus_entropy", total_loss.item() - behavior_policy_entropy.item(), total_steps)
-
+                logger.add_scalar("estimated_policy/performance", performance, total_steps)
+                logger.add_scalar("training/mse_a", mse_loss.item(), total_steps)
+                logger.add_scalar("estimated_policy/entropy", estimated_policy_entropy.item(), total_steps)
+                logger.add_scalar("estimated_policy/mse_pi_b", mse_loss_true_policy.item(), total_steps)
 
             # update weights
             total_loss.backward()
@@ -218,6 +222,24 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
         test(dataset_test, epoch)
         flush(logger)
         update_lr(optimizer, epoch, start_learning_rate=learning_rate)
+
+
+def evaluate_policy(policy, env, number_of_episodes, device):
+    all_rewards = []
+    for i in range(number_of_episodes):
+        last_state = env.reset()
+        term = False
+        episode_reward = 0
+        while not term:
+            with torch.no_grad():
+                state_tensor = torch.FloatTensor([last_state]).to(device)
+                dist = distributions.Categorical(policy.forward(state_tensor))
+                action = dist.sample().item()
+            new_obs, new_reward, term, _ = env.step(action)
+            last_state = new_obs
+            episode_reward += new_reward
+        all_rewards.append(episode_reward)
+    return np.mean(all_rewards)
 
 
 def dump_network(network, file_path):
