@@ -143,6 +143,7 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
             total_loss = nll_loss - entropy_bonus
 
             if step % log_frequency == 0:
+                # compute stats
                 with torch.no_grad():
 
                     # makes an one-hot vector for the action
@@ -161,22 +162,30 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
                     behavior_policy_entropy = torch.mean(distributions.Categorical(behavior_policy).entropy())
                 performance = evaluate_policy(policy=network, env=env, number_of_episodes=10, device=device)
 
-                s = 'step {:7d}, training accuracy: '
-                s += 'negative log likelihood{:7.3f}, '
-                s += 'mse a {:7.6f}, '
-                s += 'mse pi {:7.6f} '
-                s += 'normalized loss {:7.6f} '
+                # logging stats
+                s = 'step {:7d}, training: '
+                s += 'nll{:7.3f}, '
+                s += 'entropy_bonus {:7.6f}, '
+                s += 'total_loss {:7.6f} '
+                s += 'nll_loss_minus_pi_b_entropy {:7.6f} '
                 total_steps = current_epoch * training_steps + step
-                print(s.format(total_steps, total_loss.item(), mse_loss.item(), mse_loss_true_policy.item(), total_loss.item() - behavior_policy_entropy.item()))
-                logger.add_scalar("training/total_loss", total_loss.item(), total_steps)
+                nll_loss_minus_pi_b_entropy = total_loss.item() - behavior_policy_entropy.item()
+                print(s.format(total_steps,
+                               nll_loss.item(),
+                               entropy_bonus.item(),
+                               total_loss.item(),
+                               nll_loss_minus_pi_b_entropy))
                 logger.add_scalar("training/nll_loss", nll_loss.item(), total_steps)
                 logger.add_scalar("training/entropy_bonus", entropy_bonus.item(), total_steps)
-                logger.add_scalar("training/nll_loss_minus_entropy", total_loss.item() - behavior_policy_entropy.item(), total_steps)
+                logger.add_scalar("training/total_loss", total_loss.item(), total_steps)
+                logger.add_scalar("training/nll_loss_minus_entropy", nll_loss_minus_pi_b_entropy, total_steps)
 
                 logger.add_scalar("estimated_policy/performance", performance, total_steps)
                 logger.add_scalar("training/mse_a", mse_loss.item(), total_steps)
                 logger.add_scalar("estimated_policy/entropy", estimated_policy_entropy.item(), total_steps)
                 logger.add_scalar("estimated_policy/mse_pi_b", mse_loss_true_policy.item(), total_steps)
+
+                # run test on test_dataset
                 test(data_test, total_steps)
             # update weights
             total_loss.backward()
@@ -203,14 +212,14 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
                 # compute loss
                 loss = nll_loss_function(torch.log(estimated_policy), target)
             total_loss += loss.item()
-        average_loss = total_loss/training_steps
+        average_loss = total_loss/testing_steps
         if average_loss < smaller_testing_loss:
             dump_network(network, network_path)
 
         s = 'testing accuracy: '
         s += 'negative log likelihood{:7.3f}, '
         print(s.format(average_loss))
-        logger.add_scalar("testing/neg_log_likelihood", loss.item(), total_steps)
+        logger.add_scalar("testing/neg_log_likelihood", average_loss, total_steps)
 
         dump_network(network, network_path)
 
