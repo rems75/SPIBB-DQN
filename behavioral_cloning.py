@@ -85,9 +85,7 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
 
     smaller_testing_loss = float('inf')
 
-
     # instantiate environment for policy evaluation
-    print("sampling from environment")
     try:
         params = yaml.safe_load(open(config_file, 'r'))
     except FileNotFoundError as e:
@@ -96,17 +94,17 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
     env = environment.Environment(params['domain'], params)
 
     if sample_from_env:
+        print("sampling from environment")
         baseline_network_path = os.path.join(data_dir, params["network_path"])
         baseline = Baseline(baseline_network_path,
                             params['network_size'],
                             state_shape=params['state_shape'], nb_actions=params['nb_actions'],
                             seed=seed, temperature=params.get("baseline_temp", 0.1),
                             device=device, normalize=params['normalize'])
-
     else:
         baseline = None
 
-    def train(data, current_epoch=0, log_frequency=200):
+    def train(data, data_test, current_epoch=0, log_frequency=200):
         for step in range(training_steps):
             # clear gradients
             optimizer.zero_grad()
@@ -179,7 +177,7 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
                 logger.add_scalar("training/mse_a", mse_loss.item(), total_steps)
                 logger.add_scalar("estimated_policy/entropy", estimated_policy_entropy.item(), total_steps)
                 logger.add_scalar("estimated_policy/mse_pi_b", mse_loss_true_policy.item(), total_steps)
-
+                test(data_test, total_steps)
             # update weights
             total_loss.backward()
             optimizer.step()
@@ -187,7 +185,7 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
         # log loss
         # logger.add_scalar('loss', loss, i)
 
-    def test(data, current_epoch):
+    def test(data, total_steps):
         total_loss = 0
         for step in range(testing_steps):
 
@@ -209,17 +207,17 @@ def train_behavior_cloning(training_steps, testing_steps, mini_batch_size, learn
         if average_loss < smaller_testing_loss:
             dump_network(network, network_path)
 
-        s = 'epoch {:7d}, testing accuracy: '
+        s = 'testing accuracy: '
         s += 'negative log likelihood{:7.3f}, '
-        print(s.format(current_epoch, average_loss))
-        logger.add_scalar("testing/neg_log_likelihood", loss.item(), current_epoch)
+        print(s.format(average_loss))
+        logger.add_scalar("testing/neg_log_likelihood", loss.item(), total_steps)
 
         dump_network(network, network_path)
 
     for epoch in range(number_of_epochs):
         print("\nPROGRESS: {0:02.2f}%\n".format(epoch/number_of_epochs*100))
-        train(dataset_train, epoch)
-        test(dataset_test, epoch)
+        train(dataset_train, dataset_test, epoch)
+
         flush(logger)
         update_lr(optimizer, epoch, start_learning_rate=learning_rate)
 
