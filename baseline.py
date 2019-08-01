@@ -1,14 +1,13 @@
 import argparse
 import numpy as np
 import os
-import pickle
 import time
 import torch
 import yaml
 
 from dataset import DataSet, Dataset_Counts
 from utils import softmax
-from model import SmallDenseNetwork, DenseNetwork, Network, LargeNetwork, NatureNetwork
+from model import build_network
 from environments import environment
 
 
@@ -18,7 +17,7 @@ COUNTS_SUFFIX = 'counts_dataset.pkl'
 
 class Baseline(object):
 
-    def __init__(self, network_path, network_size, network_state=None, state_shape=[4], nb_actions=9,
+    def __init__(self, network_size, network_path=None, state_shape=[4], nb_actions=9,
                  device='cuda', seed=123, temperature=1.0, normalize=255.):
 
         self.seed = seed
@@ -29,26 +28,13 @@ class Baseline(object):
         self.temperature = temperature
         self.normalize = normalize
         self.network = self._build_network()
-        if network_state is None:
+        if network_path is not None:
             self._load_model(network_path)
-        else:
-            self._copy_weight_from(network_state)
 
         print("Using soft q-values with a temperature of {}".format(temperature), flush=True)
 
     def _build_network(self):
-        if self.network_size == 'small':
-            return Network()
-        elif self.network_size == 'large':
-            return LargeNetwork(state_shape=self.state_shape, nb_channels=4, nb_actions=self.nb_actions, device=self.device)
-        elif self.network_size == 'nature':
-            return NatureNetwork(state_shape=self.state_shape, nb_channels=4, nb_actions=self.nb_actions, device=self.device)
-        elif self.network_size == 'dense':
-            return DenseNetwork(state_shape=self.state_shape[0], nb_actions=self.nb_actions, device=self.device)
-        elif self.network_size == 'small_dense':
-            return SmallDenseNetwork(state_shape=self.state_shape[0], nb_actions=self.nb_actions, device=self.device)
-        else:
-            raise ValueError('Invalid network_size.')
+        return build_network(self.state_shape, self.nb_actions, self.device, self.network_size)
 
     def _load_model(self, network_path):
         if not os.path.exists(network_path):
@@ -140,7 +126,7 @@ class Baseline(object):
         dataset.save_dataset(file_path)
         return dataset
 
-    def evaluate_baseline(self, env, params, number_of_steps, number_of_epochs, noise_factor=1.0):
+    def evaluate_baseline(self, env, number_of_steps, number_of_epochs, noise_factor=1.0, verbose=True):
         """ Evaluate the baseline number_of_epochs times for number_of_steps steps.
 
         Args:
@@ -153,7 +139,8 @@ class Baseline(object):
 
         all_rewards = []
         for epoch in range(number_of_epochs):
-            print("Starting epoch {}".format(epoch), flush=True)
+            if verbose:
+                print("Starting epoch {}".format(epoch), flush=True)
             last_state = np.empty(tuple(env.state_shape), dtype=np.uint8)
             last_state = self._reset(env)
             term, start_time = False, time.time()
@@ -175,17 +162,20 @@ class Baseline(object):
                     term = False
 
             all_rewards.append(np.mean(rewards))
-            print("Average reward: {}. Average steps: {}".format(
-                np.mean(rewards), np.mean(all_nb_steps)), flush=True)
-            print("Epoch finished in {:.2f} seconds.\n".format(time.time() - start_time), flush=True)
+            if verbose:
+                print("Average reward: {}. Average steps: {}".format(np.mean(rewards), np.mean(all_nb_steps)), flush=True)
+                print("Epoch finished in {:.2f} seconds.\n".format(time.time() - start_time), flush=True)
 
         all_rewards.sort()
-        print("Mean Average: {}.".format(np.mean(all_rewards)), flush=True)
-        if number_of_epochs > 10:
-            print("Average decile: {}.".format(np.mean(all_rewards[:int(number_of_epochs/10)])), flush=True)
-        if number_of_epochs > 100:
-            print("Average centile: {}".format(
-                np.mean(all_rewards[:int(number_of_epochs/100)])), flush=True)
+        mean_perfomance = np.mean(all_rewards)
+        if verbose:
+            print("Mean Average: {}.".format(mean_perfomance), flush=True)
+            if number_of_epochs > 10:
+                print("Average decile: {}.".format(np.mean(all_rewards[:int(number_of_epochs/10)])), flush=True)
+            if number_of_epochs > 100:
+                print("Average centile: {}".format(
+                    np.mean(all_rewards[:int(number_of_epochs/100)])), flush=True)
+        return mean_perfomance
 
 
 def compute_counts(dataset, overwrite=False, count_param=0.2):
@@ -246,12 +236,13 @@ def run(args):
 
     env = environment.Environment(params['domain'], params)
 
-    baseline = Baseline(os.path.join(args.baseline_dir, args.baseline_name), params['network_size'], state_shape=params['state_shape'],
-                        nb_actions=params['nb_actions'], seed=args.seed, temperature=args.temperature,
-                        device=args.device, normalize=params['normalize'])
+    baseline = Baseline(network_size=params['network_size'],
+                        network_path=os.path.join(args.baseline_dir, args.baseline_name),
+                        state_shape=params['state_shape'], nb_actions=params['nb_actions'], device=args.device,
+                        seed=args.seed, temperature=args.temperature, normalize=params['normalize'])
 
     if args.evaluate_baseline:
-        baseline.evaluate_baseline(env, params, args.eval_steps, args.eval_epochs, args.noise_factor)
+        baseline.evaluate_baseline(env, args.eval_steps, args.eval_epochs, args.noise_factor)
 
     if args.generate_dataset:
         print("Generating dataset with actual size {}...".format(args.dataset_size), flush=True)

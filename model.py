@@ -152,3 +152,18 @@ class NatureNetwork(nn.Module):
 
     def _feature_size(self):
         return self.features(torch.zeros(1, 4, 84, 84)).view(-1).size(0)
+
+
+def build_network(state_shape, nb_actions, device, network_size):
+    if network_size == 'small':
+        return Network()
+    elif network_size == 'large':
+        return LargeNetwork(state_shape=state_shape, nb_channels=4, nb_actions=nb_actions, device=device)
+    elif network_size == 'nature':
+        return NatureNetwork(state_shape=state_shape, nb_channels=4, nb_actions=nb_actions, device=device)
+    elif network_size == 'dense':
+        return DenseNetwork(state_shape=state_shape[0], nb_actions=nb_actions, device=device)
+    elif network_size == 'small_dense':
+        return SmallDenseNetwork(state_shape=state_shape[0], nb_actions=nb_actions, device=device)
+    else:
+        raise ValueError('Invalid network_size.')

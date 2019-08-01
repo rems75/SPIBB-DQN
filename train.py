@@ -49,9 +49,9 @@ def run(config_file, options):
 
     if params['batch']:
         baseline_path = os.path.join(DATA_DIR, params['baseline_path'])
-        baseline = Baseline(baseline_path, params['network_size'], state_shape=params['state_shape'],
-                            nb_actions=params['nb_actions'], seed=params['seed'], temperature=params['baseline_temp'],
-                            device=params['device'], normalize=params['normalize'])
+        baseline = Baseline(params['network_size'], network_path=baseline_path, state_shape=params['state_shape'],
+                            nb_actions=params['nb_actions'], device=params['device'], seed=params['seed'],
+                            temperature=params['baseline_temp'], normalize=params['normalize'])
 
         dataset_path = os.path.join(DATA_DIR, params['dataset_path'])
         print("\nLoading dataset from file {}".format(dataset_path), flush=True)

@@ -77,7 +77,10 @@ def train_behavior_cloning(training_steps, testing_steps, evaluation_episodes,
     dataset_train, dataset_test = full_dataset.train_test_split(test_size=0.2)
 
     # create model
-    network = _build_network(network_size, state_shape, nb_actions, device)
+    estimated_baseline_policy = Baseline(network_size=network_size, network_path=None, state_shape=state_shape,
+                                         nb_actions=nb_actions, device=device, seed=seed, temperature=0)
+    network = estimated_baseline_policy.network
+    # network = build_network(state_shape, nb_actions, device, network_size)
 
     # define loss and optimizer
     nll_loss_function = nn.NLLLoss()
@@ -95,11 +98,10 @@ def train_behavior_cloning(training_steps, testing_steps, evaluation_episodes,
     if sample_from_env:
         print("sampling from environment")
         baseline_network_path = os.path.join(data_dir, params["network_path"])
-        baseline = Baseline(baseline_network_path,
-                            params['network_size'],
-                            state_shape=params['state_shape'], nb_actions=params['nb_actions'],
-                            seed=seed, temperature=params.get("baseline_temp", 0.1),
-                            device=device, normalize=params['normalize'])
+        baseline = Baseline(params['network_size'], network_path=baseline_network_path,
+                            state_shape=params['state_shape'],
+                            nb_actions=params['nb_actions'], device=device, seed=seed,
+                            temperature=params.get("baseline_temp", 0.1), normalize=params['normalize'])
     else:
         baseline = None
 
@@ -130,7 +132,7 @@ def train_behavior_cloning(training_steps, testing_steps, evaluation_episodes,
             target = torch.LongTensor(a).to(device)  # NLLLoss gets the indexes of the correct class as input
 
             # get predictions
-            estimated_policy = network.forward(batch_states)
+            estimated_policy = torch.softmax(network.forward(batch_states), dim=1)
 
             # computing losses
             # negative loglikelihood
@@ -161,7 +163,9 @@ def train_behavior_cloning(training_steps, testing_steps, evaluation_episodes,
 
                     # compute entropy of the behavior policy
                     behavior_policy_entropy = torch.mean(distributions.Categorical(behavior_policy).entropy())
-                performance = evaluate_policy(policy=network, env=env, number_of_episodes=evaluation_episodes, device=device)
+                performance = evaluate_policy(network=network, env=env, number_of_episodes=evaluation_episodes, device=device)
+                # new_performance = estimated_baseline_policy.evaluate_baseline(env, number_of_steps=100, number_of_epochs=10)
+                # print(performance, new_performance)
 
                 # logging stats
                 s = 'step {:7d}, training: '
@@ -205,13 +209,13 @@ def train_behavior_cloning(training_steps, testing_steps, evaluation_episodes,
 
             with torch.no_grad():
                 # get predictions
-                estimated_policy = network.forward(batch_states)
+                estimated_policy = torch.softmax(network.forward(batch_states), dim=1)
                 # compute loss
                 loss = nll_loss_function(torch.log(estimated_policy), target)
             total_loss += loss.item()
         average_loss = total_loss/testing_steps
         if average_loss < smaller_testing_loss:
-            dump_network(network, network_path)
+            estimated_baseline_policy.dump_network(network_path)
 
         # log testing stats
         s = 'testing accuracy: '
@@ -225,9 +229,10 @@ def train_behavior_cloning(training_steps, testing_steps, evaluation_episodes,
 
         flush(logger)
         update_lr(optimizer, epoch, start_learning_rate=learning_rate)
+    # estimated_baseline_policy.evaluate_baseline(env, number_of_steps=1000, number_of_epochs=10)
 
 
-def evaluate_policy(policy, env, number_of_episodes, device):
+def evaluate_policy(network, env, number_of_episodes, device):
     all_rewards = []
     for i in range(number_of_episodes):
         last_state = env.reset()
@@ -236,7 +241,7 @@ def evaluate_policy(policy, env, number_of_episodes, device):
         while not term:
             with torch.no_grad():
                 state_tensor = torch.FloatTensor([last_state]).to(device)
-                dist = distributions.Categorical(policy.forward(state_tensor))
+                dist = distributions.Categorical(torch.softmax(network.forward(state_tensor), dim=1))
                 action = dist.sample().item()
             new_obs, new_reward, term, _ = env.step(action)
             last_state = new_obs
@@ -245,74 +250,10 @@ def evaluate_policy(policy, env, number_of_episodes, device):
     return np.mean(all_rewards)
 
 
-def dump_network(network, file_path):
-    torch.save(network.state_dict(), file_path)
-
-
 def update_lr(optimizer, epoch, start_learning_rate):
     new_learning_rate = start_learning_rate / (epoch + 2)
     for g in optimizer.param_groups:
         g['lr'] = new_learning_rate
-
-
-def init_weights(m):
-    """
-    initializes the weights of the given module using a uniform distribution
-    sets all the bias parameters to 0
-    """
-    if type(m) in [nn.Linear, nn.Conv2d]:
-        nn.init.kaiming_uniform_(m.weight)
-        m.bias.data.fill_(0.)
-
-
-class SmallDensePolicyNetwork(nn.Module):
-    def __init__(self, state_shape, nb_actions, device):
-        super(SmallDensePolicyNetwork, self).__init__()
-
-        self.fc = nn.Sequential(
-            nn.Linear(state_shape, 8),
-            nn.ReLU(),
-            nn.Linear(8, 4),
-            nn.ReLU(),
-            nn.Linear(4, nb_actions),
-            nn.Softmax(dim=1)
-        )
-        self.fc.apply(init_weights)
-        super(SmallDensePolicyNetwork, self).to(device)
-
-    def forward(self, x):
-        x = self.fc(x)
-        return x
-
-
-class DensePolicyNetwork(nn.Module):
-    def __init__(self, state_shape, nb_actions, device):
-        super(DensePolicyNetwork, self).__init__()
-
-        self.fc = nn.Sequential(
-            nn.Linear(state_shape, 32),
-            nn.ReLU(),
-            nn.Linear(32, 128),
-            nn.ReLU(),
-            nn.Linear(128, 32),
-            nn.ReLU(),
-            nn.Linear(32, nb_actions),
-            nn.Softmax(dim=1)
-        )
-        self.fc.apply(init_weights)
-        super(DensePolicyNetwork, self).to(device)
-
-    def forward(self, x):
-        x = self.fc(x)
-        return x
-
-
-def _build_network(network_size, state_shape, nb_actions, device):
-    if network_size == 'dense':
-        return DensePolicyNetwork(state_shape=state_shape[0], nb_actions=nb_actions, device=device)
-    if network_size == 'small_dense':
-        return SmallDensePolicyNetwork(state_shape=state_shape[0], nb_actions=nb_actions, device=device)
-    raise ValueError('Invalid network_size.')
 
 
 if __name__ == "__main__":

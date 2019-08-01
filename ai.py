@@ -1,9 +1,10 @@
-import numpy as np
-from utils import ExperienceReplay
-from model import SmallDenseNetwork, DenseNetwork, Network, LargeNetwork, NatureNetwork
 import torch
+
+import numpy as np
 import torch.optim as optim
 
+from utils import ExperienceReplay
+from model import build_network
 from baseline import Baseline
 
 
@@ -55,9 +56,9 @@ class AI(object):
         if baseline is not None:
             self.baseline = baseline
         else:
-            self.baseline = Baseline(network_path=None, network_size=self.network_size,
-                                     network_state=self.network.state_dict(), state_shape=state_shape,
-                                     nb_actions=nb_actions, temperature=baseline_temp, normalize=255., device=self.device)
+            self.baseline = Baseline(network_size=self.network_size, state_shape=state_shape, nb_actions=nb_actions,
+                                     device=self.device, temperature=baseline_temp)
+            self.baseline._copy_weight_from(self.network.state_dict())
 
         self.learning_type = learning_type
         self.kappa = kappa
@@ -70,18 +71,7 @@ class AI(object):
         self.boltzmann_parameter = 0.9
 
     def _build_network(self):
-        if self.network_size == 'small':
-            return Network()
-        elif self.network_size == 'large':
-            return LargeNetwork(state_shape=self.state_shape, nb_channels=4, nb_actions=self.nb_actions, device=self.device)
-        elif self.network_size == 'nature':
-            return NatureNetwork(state_shape=self.state_shape, nb_channels=4, nb_actions=self.nb_actions, device=self.device)
-        elif self.network_size == 'dense':
-            return DenseNetwork(state_shape=self.state_shape[0], nb_actions=self.nb_actions, device=self.device)
-        elif self.network_size == 'small_dense':
-            return SmallDenseNetwork(state_shape=self.state_shape[0], nb_actions=self.nb_actions, device=self.device)
-        else:
-            raise ValueError('Invalid network_size.')
+        return build_network(self.state_shape, self.nb_actions, self.device, self.network_size)
 
     def train_on_batch(self, s, a, _, r, s2, term, c=None, pi_b=None, c1=None):
         """

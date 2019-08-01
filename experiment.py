@@ -53,6 +53,7 @@ class DQNExperiment(object):
     def do_epochs(self, number_of_epochs=1, steps_per_epoch=10000, is_learning=True, is_testing=True, steps_per_test=10000, **kwargs):
         best_perf = -10000
         rewards_over_all_episodes = []
+        self._restart_logger()
         self.ai.logger = self.logger
         for epoch in range(self.curr_epoch, number_of_epochs):
 
