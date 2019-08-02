@@ -50,11 +50,10 @@ def run(config_file, options):
     if params['batch']:
         baseline_path = os.path.join(DATA_DIR, params['baseline_path'])
         dataset_path = os.path.join(DATA_DIR, params['dataset_path'])
-        folder_name = os.getenv("PT_OUTPUT_DIR", os.path.dirname(dataset_path))
 
         if params['learning_type'] == 'pi_b_hat_behavior_cloning':
             from behavioral_cloning import EstimatedBaseline
-            baseline_path = os.path.join(folder_name, 'cloned_network_weights.pt')
+            baseline_path = os.path.join(os.path.dirname(dataset_path), 'cloned_network_weights.pt')
             baseline = EstimatedBaseline(
                 params['network_size'], network_path=baseline_path, state_shape=params['state_shape'],
                 nb_actions=params['nb_actions'], device=params['device'], seed=params['seed'],
@@ -71,6 +70,7 @@ def run(config_file, options):
         if not os.path.exists(dataset_path):
             raise ValueError("The dataset file does not exist")
         dataset = Dataset_Counts.load_dataset(dataset_path)
+        folder_name = os.getenv("PT_OUTPUT_DIR", os.path.dirname(dataset_path))
         print("Data with counts loaded: {} samples".format(dataset.size), flush=True)
         expt = BatchExperiment(dataset=dataset, env=env, folder_name=folder_name, episode_max_len=params['episode_max_len'],
                                minimum_count=params['minimum_count'], extra_stochasticity=params['extra_stochasticity'],
