@@ -160,7 +160,7 @@ def train_behavior_cloning(training_steps, testing_steps,
 
                     # compute entropy of the behavior policy
                     behavior_policy_entropy = torch.mean(distributions.Categorical(behavior_policy).entropy())
-                    performance = estimated_baseline_policy.evaluate_baseline(env, number_of_steps=20,
+                    mean_perfomance, _, _ = estimated_baseline_policy.evaluate_baseline(env, number_of_steps=20,
                                                                               number_of_epochs=100,
                                                                               verbose=False)
 
@@ -183,14 +183,14 @@ def train_behavior_cloning(training_steps, testing_steps,
                                total_loss.item(),
                                nll_loss_minus_pi_b_entropy,
                                testing_loss,
-                               performance))
+                               mean_perfomance))
 
                 logger.add_scalar("training/nll_loss", nll_loss.item(), total_steps)
                 logger.add_scalar("training/entropy_bonus", entropy_bonus.item(), total_steps)
                 logger.add_scalar("training/total_loss", total_loss.item(), total_steps)
                 logger.add_scalar("training/nll_loss_minus_entropy", nll_loss_minus_pi_b_entropy, total_steps)
 
-                logger.add_scalar("estimated_policy/performance", performance, total_steps)
+                logger.add_scalar("estimated_policy/performance", mean_perfomance, total_steps)
                 logger.add_scalar("estimated_policy/entropy", estimated_policy_entropy.item(), total_steps)
                 logger.add_scalar("estimated_policy/mse_a", mse_loss.item(), total_steps)
                 logger.add_scalar("estimated_policy/mse_pi_b", mse_loss_true_policy.item(), total_steps)
@@ -228,7 +228,15 @@ def train_behavior_cloning(training_steps, testing_steps,
 
         flush(logger)
         update_lr(optimizer, epoch, start_learning_rate=learning_rate)
-    estimated_baseline_policy.evaluate_baseline(env, number_of_steps=100, number_of_epochs=1000)
+
+    final_policy = EstimatedBaseline(network_size=network_size, network_path=network_path,
+                                     state_shape=state_shape, nb_actions=nb_actions, device=device,
+                                     seed=seed, temperature=0)
+    mean, decile, centile = final_policy.evaluate_baseline(env, number_of_steps=10000, number_of_epochs=300)
+    with open(network_path.replace('.pt', '_performance.csv'), 'w') as f:
+        f.write('mean, decile, centile\n')
+        f.write(','.join([str(mean), str(decile), str(centile)]))
+        f.write('\n')
 
 
 class EstimatedBaseline(Baseline):

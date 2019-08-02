@@ -167,15 +167,16 @@ class Baseline(object):
                 print("Epoch finished in {:.2f} seconds.\n".format(time.time() - start_time), flush=True)
 
         all_rewards.sort()
-        mean_perfomance = np.mean(all_rewards)
+        mean, decile, centile = np.mean(all_rewards), 0, 0
         if verbose:
-            print("Mean Average: {}.".format(mean_perfomance), flush=True)
+            print("Mean Average: {}.".format(mean), flush=True)
             if number_of_epochs > 10:
-                print("Average decile: {}.".format(np.mean(all_rewards[:int(number_of_epochs/10)])), flush=True)
+                decile = np.mean(all_rewards[:int(number_of_epochs / 10)])
+                print("Average decile: {}.".format(decile), flush=True)
             if number_of_epochs > 100:
-                print("Average centile: {}".format(
-                    np.mean(all_rewards[:int(number_of_epochs/100)])), flush=True)
-        return mean_perfomance
+                centile = np.mean(all_rewards[:int(number_of_epochs/100)])
+                print("Average centile: {}".format(centile), flush=True)
+        return mean, decile, centile
 
 
 def compute_counts(dataset, overwrite=False, count_param=0.2):
