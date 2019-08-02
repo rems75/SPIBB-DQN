@@ -219,7 +219,7 @@ class DQNExperiment(object):
         if self.logger is not None:
             self.logger.close()
             if not self.keep_all_logs:
-                shutil.rmtree(self.logger.logdir)
+                shutil.rmtree(self.logger.file_writer.get_logdir())
         self.logger = get_logger(self.folder_name)
 
     @staticmethod
@@ -363,7 +363,7 @@ class BatchExperiment(object):
         if self.logger is not None:
             self.logger.close()
             if not self.keep_all_logs:
-                shutil.rmtree(self.logger.logdir)
+                shutil.rmtree(self.logger.file_writer.get_logdir())
         self.logger = get_logger(self.folder_name)
 
 
