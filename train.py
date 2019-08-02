@@ -49,17 +49,29 @@ def run(config_file, options):
 
     if params['batch']:
         baseline_path = os.path.join(DATA_DIR, params['baseline_path'])
-        baseline = Baseline(params['network_size'], network_path=baseline_path, state_shape=params['state_shape'],
-                            nb_actions=params['nb_actions'], device=params['device'], seed=params['seed'],
-                            temperature=params['baseline_temp'], normalize=params['normalize'])
-
         dataset_path = os.path.join(DATA_DIR, params['dataset_path'])
+        folder_name = os.getenv("PT_OUTPUT_DIR", os.path.dirname(dataset_path))
+
+        if params['learning_type'] == 'pi_b_hat_behavior_cloning':
+            from behavioral_cloning import EstimatedBaseline
+            baseline_path = os.path.join(folder_name, 'cloned_network_weights.pt')
+            baseline = EstimatedBaseline(
+                params['network_size'], network_path=baseline_path, state_shape=params['state_shape'],
+                nb_actions=params['nb_actions'], device=params['device'], seed=params['seed'],
+                temperature=params['baseline_temp'], normalize=params['normalize'])
+        elif params['learning_type'] == 'pi_b':
+            baseline = Baseline(params['network_size'], network_path=baseline_path, state_shape=params['state_shape'],
+                                nb_actions=params['nb_actions'], device=params['device'], seed=params['seed'],
+                                temperature=params['baseline_temp'], normalize=params['normalize'])
+        else:
+            # no baseline, should use counters to estimate policy
+            baseline = None
+
         print("\nLoading dataset from file {}".format(dataset_path), flush=True)
         if not os.path.exists(dataset_path):
             raise ValueError("The dataset file does not exist")
         dataset = Dataset_Counts.load_dataset(dataset_path)
         print("Data with counts loaded: {} samples".format(dataset.size), flush=True)
-        folder_name = os.getenv("PT_OUTPUT_DIR", os.path.dirname(dataset_path))
         expt = BatchExperiment(dataset=dataset, env=env, folder_name=folder_name, episode_max_len=params['episode_max_len'],
                                minimum_count=params['minimum_count'], extra_stochasticity=params['extra_stochasticity'],
                                history_len=params['history_len'], max_start_nullops=params['max_start_nullops'],

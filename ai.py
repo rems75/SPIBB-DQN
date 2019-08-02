@@ -92,6 +92,7 @@ class AI(object):
         a = torch.LongTensor(a).to(self.device)
         r = torch.FloatTensor(r).to(self.device)
         t = torch.FloatTensor(np.float32(term)).to(self.device)
+        pi_b = torch.FloatTensor(pi_b).to(self.device)
 
         # Squeeze dimensions for history_len = 1
         s = torch.squeeze(s)
@@ -124,8 +125,6 @@ class AI(object):
         def _get_bellman_target_pi_b(c, pi_b_):
             # All state/action counts for state s2
             c = torch.FloatTensor(c).to(self.device)
-            # Policy on state s2 (estimated using softmax on the q-values)
-            pi_b_ = torch.FloatTensor(pi_b_).to(self.device)
             # Mask for "bootstrapped actions"
             mask_non_bootstrapped = (c >= self.minimum_count).float()
             # print("mask_non_bootstrapped %d, bootstrapped: %d" % ((c >= self.minimum_count).float().sum(), (c < self.minimum_count).float().sum()))
@@ -225,12 +224,14 @@ class AI(object):
             bellman_target = _get_bellman_target_dqn()
         elif self.learning_type == 'pi_b':
             bellman_target = _get_bellman_target_pi_b(c, pi_b)
-        elif self.learning_type == 'pi_b_hat':
-            total_states_visits = c.sum(axis=1)
-            # avoid division problem
-            # this does not change the result since the future value of terminal transitions is ignored
-            total_states_visits[term] = 1
-            pi_b_hat = c / total_states_visits[:, np.newaxis]
+        elif self.learning_type.startswith('pi_b_hat'):
+            if self.learning_type == "pi_b_hat_count_based":
+                total_states_visits = c.sum(axis=1)
+                total_states_visits[term] = 1  # avoid division by zero (terminal transitions are ignored)
+                pi_b_hat = c / total_states_visits[:, np.newaxis]
+                pi_b_hat = torch.FloatTensor(pi_b_hat).to(self.device)
+            else:
+                pi_b_hat = self.baseline.policy(s2)
             bellman_target = _get_bellman_target_pi_b(c, pi_b_hat)
         elif self.learning_type == 'online_pi_b':
             bellman_target = _get_bellman_target_online_pi_b(c, pi_b)
@@ -268,21 +269,25 @@ class AI(object):
         """
         states = np.expand_dims(states, 0)
         q_values = self.get_q(states)[0][0]
-        if self.learning_type in ['pi_b', 'pi_b_hat'] and self.minimum_count > 0.0:
+        if self.learning_type in ['pi_b', 'pi_b_hat', 'pi_b_hat_count_based'] and self.minimum_count > 0.0:
             mask = (counts < self.minimum_count)
 
             self.logger.add_scalar('bootstrapped_interaction', np.sum(mask), self.interaction_step)
             if self.learning_type == 'pi_b':
                 _, _, policy, _ = self.baseline.inference(states[0])
-            elif self.learning_type == 'pi_b_hat':
-                # estimate policy according to visits counter
-                total_state_visits = counts.sum()
-                if total_state_visits > 0:
-                    policy = counts/total_state_visits
-                    self.logger.add_scalar('randompolicy', 0, self.interaction_step)
+            elif self.learning_type.startswith('pi_b_hat'):
+                if self.learning_type == 'pi_b_hat_count_based':
+                    # estimate policy according to visits counter
+                    total_state_visits = counts.sum()
+                    if total_state_visits > 0:
+                        policy = counts/total_state_visits
+                        self.logger.add_scalar('randompolicy', 0, self.interaction_step)
+                    else:
+                        policy = np.ones(self.nb_actions) / self.nb_actions
+                        self.logger.add_scalar('randompolicy', 1, self.interaction_step)
                 else:
-                    policy = np.ones(self.nb_actions) / self.nb_actions
-                    self.logger.add_scalar('randompolicy', 1, self.interaction_step)
+                    batch_states = torch.FloatTensor(states).to(self.device)
+                    policy = self.baseline.policy(batch_states).detach().numpy()[0]
             pi_b = np.multiply(mask, policy)
             pi_b[np.argmax(q_values - mask*MAX_Q)] += np.maximum(0, 1 - np.sum(pi_b))
             pi_b /= np.sum(pi_b)

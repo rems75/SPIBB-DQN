@@ -25,8 +25,6 @@ from utils import flush
               default=2000)
 @click.option('--mini_batch_size',
               default=32)
-@click.option('--evaluation_episodes',
-              default=1000)
 @click.option('--learning_rate',
               default=0.01,
               help="learning rate for optimizer")
@@ -56,7 +54,7 @@ from utils import flush
               default='config.yaml',
               help="config file to instantiate env and baseline to train sampling from environment")
 @click.option('--sample_from_env', is_flag=True)
-def train_behavior_cloning(training_steps, testing_steps, evaluation_episodes,
+def train_behavior_cloning(training_steps, testing_steps,
                            mini_batch_size, learning_rate,  number_of_epochs, network_size,
                            folder_location, dataset_file, network_path,
                            state_shape, nb_actions, sample_from_env,
@@ -77,14 +75,12 @@ def train_behavior_cloning(training_steps, testing_steps, evaluation_episodes,
     dataset_train, dataset_test = full_dataset.train_test_split(test_size=0.2)
 
     # create model
-    estimated_baseline_policy = Baseline(network_size=network_size, network_path=None, state_shape=state_shape,
+    estimated_baseline_policy = EstimatedBaseline(network_size=network_size, network_path=None, state_shape=state_shape,
                                          nb_actions=nb_actions, device=device, seed=seed, temperature=0)
-    network = estimated_baseline_policy.network
-    # network = build_network(state_shape, nb_actions, device, network_size)
 
     # define loss and optimizer
     nll_loss_function = nn.NLLLoss()
-    optimizer = torch.optim.SGD(network.parameters(), lr=learning_rate)
+    optimizer = torch.optim.SGD(estimated_baseline_policy.network.parameters(), lr=learning_rate)
     # optimizer = torch.optim.RMSprop(network.parameters(), lr=learning_rate, alpha=0.95, eps=1e-07)
 
     # instantiate environment for policy evaluation
@@ -132,7 +128,7 @@ def train_behavior_cloning(training_steps, testing_steps, evaluation_episodes,
             target = torch.LongTensor(a).to(device)  # NLLLoss gets the indexes of the correct class as input
 
             # get predictions
-            estimated_policy = torch.softmax(network.forward(batch_states), dim=1)
+            estimated_policy = estimated_baseline_policy.policy(batch_states)
 
             # computing losses
             # negative loglikelihood
@@ -146,6 +142,7 @@ def train_behavior_cloning(training_steps, testing_steps, evaluation_episodes,
             total_loss = nll_loss - entropy_bonus
 
             if step % log_frequency == 0:
+                total_steps = current_epoch * training_steps + step
                 # compute stats
                 with torch.no_grad():
 
@@ -163,35 +160,42 @@ def train_behavior_cloning(training_steps, testing_steps, evaluation_episodes,
 
                     # compute entropy of the behavior policy
                     behavior_policy_entropy = torch.mean(distributions.Categorical(behavior_policy).entropy())
-                performance = evaluate_policy(network=network, env=env, number_of_episodes=evaluation_episodes, device=device)
-                # new_performance = estimated_baseline_policy.evaluate_baseline(env, number_of_steps=100, number_of_epochs=10)
-                # print(performance, new_performance)
+                    performance = estimated_baseline_policy.evaluate_baseline(env, number_of_steps=20,
+                                                                              number_of_epochs=100,
+                                                                              verbose=False)
+
+                # run test on test_dataset
+                testing_loss = test(data_test, total_steps)
+
 
                 # logging stats
                 s = 'step {:7d}, training: '
                 s += 'nll{:7.3f}, '
-                s += 'entropy_bonus {:7.6f}, '
-                s += 'total_loss {:7.6f} '
-                s += 'nll_loss_minus_pi_b_entropy {:7.6f} '
-                total_steps = current_epoch * training_steps + step
+                s += 'entropy_bonus {:7.3f}, '
+                s += 'total_loss {:7.3f} '
+                s += 'nll_loss_minus_pi_b_entropy {:7.3f} '
+                s += 'testing accuracy: {:7.3f} '
+                s += 'estimated policy performance {:7.3f} '
                 nll_loss_minus_pi_b_entropy = total_loss.item() - behavior_policy_entropy.item()
                 print(s.format(total_steps,
                                nll_loss.item(),
                                entropy_bonus.item(),
                                total_loss.item(),
-                               nll_loss_minus_pi_b_entropy))
+                               nll_loss_minus_pi_b_entropy,
+                               testing_loss,
+                               performance))
+
                 logger.add_scalar("training/nll_loss", nll_loss.item(), total_steps)
                 logger.add_scalar("training/entropy_bonus", entropy_bonus.item(), total_steps)
                 logger.add_scalar("training/total_loss", total_loss.item(), total_steps)
                 logger.add_scalar("training/nll_loss_minus_entropy", nll_loss_minus_pi_b_entropy, total_steps)
 
                 logger.add_scalar("estimated_policy/performance", performance, total_steps)
-                logger.add_scalar("training/mse_a", mse_loss.item(), total_steps)
                 logger.add_scalar("estimated_policy/entropy", estimated_policy_entropy.item(), total_steps)
+                logger.add_scalar("estimated_policy/mse_a", mse_loss.item(), total_steps)
                 logger.add_scalar("estimated_policy/mse_pi_b", mse_loss_true_policy.item(), total_steps)
+                logger.add_scalar("testing/neg_log_likelihood", testing_loss, total_steps)
 
-                # run test on test_dataset
-                test(data_test, total_steps)
             # update weights
             total_loss.backward()
             optimizer.step()
@@ -209,19 +213,14 @@ def train_behavior_cloning(training_steps, testing_steps, evaluation_episodes,
 
             with torch.no_grad():
                 # get predictions
-                estimated_policy = torch.softmax(network.forward(batch_states), dim=1)
+                estimated_policy = estimated_baseline_policy.policy(batch_states)
                 # compute loss
                 loss = nll_loss_function(torch.log(estimated_policy), target)
             total_loss += loss.item()
         average_loss = total_loss/testing_steps
         if average_loss < smaller_testing_loss:
             estimated_baseline_policy.dump_network(network_path)
-
-        # log testing stats
-        s = 'testing accuracy: '
-        s += 'negative log likelihood{:7.3f}, '
-        print(s.format(average_loss))
-        logger.add_scalar("testing/neg_log_likelihood", average_loss, total_steps)
+        return average_loss
 
     for epoch in range(number_of_epochs):
         print("\nPROGRESS: {0:02.2f}%\n".format(epoch/number_of_epochs*100), flush=True)
@@ -229,25 +228,19 @@ def train_behavior_cloning(training_steps, testing_steps, evaluation_episodes,
 
         flush(logger)
         update_lr(optimizer, epoch, start_learning_rate=learning_rate)
-    # estimated_baseline_policy.evaluate_baseline(env, number_of_steps=1000, number_of_epochs=10)
+    estimated_baseline_policy.evaluate_baseline(env, number_of_steps=100, number_of_epochs=1000)
 
 
-def evaluate_policy(network, env, number_of_episodes, device):
-    all_rewards = []
-    for i in range(number_of_episodes):
-        last_state = env.reset()
-        term = False
-        episode_reward = 0
-        while not term:
-            with torch.no_grad():
-                state_tensor = torch.FloatTensor([last_state]).to(device)
-                dist = distributions.Categorical(torch.softmax(network.forward(state_tensor), dim=1))
-                action = dist.sample().item()
-            new_obs, new_reward, term, _ = env.step(action)
-            last_state = new_obs
-            episode_reward += new_reward
-        all_rewards.append(episode_reward)
-    return np.mean(all_rewards)
+class EstimatedBaseline(Baseline):
+    def inference(self, state):
+        state_tensor = torch.FloatTensor(state).to(self.device).unsqueeze(0)
+        policy = self.policy(state_tensor)
+        choice = distributions.Categorical(policy).sample()
+        return choice.item(), None, policy, None
+
+    def policy(self, state):
+        x = self.network.forward(state)
+        return torch.softmax(x, dim=1)
 
 
 def update_lr(optimizer, epoch, start_learning_rate):

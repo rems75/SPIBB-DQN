@@ -259,12 +259,11 @@ class BatchExperiment(object):
             filename = os.path.join(self.folder_name, "soft_{}_{}.csv".format(exp_id, self.ai.epsilon_soft))
         elif self.ai.learning_type == 'ramdp':
             filename = os.path.join(self.folder_name, "ramdp_{}_{:.2f}.csv".format(exp_id, self.ai.kappa))
-        elif self.ai.learning_type == 'pi_b':
-            filename = os.path.join(self.folder_name, "spibb_{}_{}.csv".format(exp_id, self.ai.minimum_count))
-        elif self.ai.learning_type == 'pi_b_hat':
-            filename = os.path.join(self.folder_name, "spibb_hat_{}_{}.csv".format(exp_id, self.ai.minimum_count))
+        elif self.ai.learning_type.startswith('pi_b'):
+            filename = "{}_{}_{}.csv".format(self.ai.learning_type, exp_id, self.ai.minimum_count)
+            filename = os.path.join(self.folder_name, filename)
         elif self.ai.learning_type == 'regular':
-            filename = os.path.join(self.folder_name, "dqn_{}.csv".format(exp_id))
+            filename = os.path.join(self.folder_name, "dqn_{}_0.csv".format(exp_id))
         else:
             raise ValueError()
         try:
