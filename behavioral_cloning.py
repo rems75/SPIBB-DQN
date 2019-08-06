@@ -30,7 +30,7 @@ from utils import flush
               help="learning rate for optimizer")
 @click.option('--network_size',
               default='dense')
-@click.option('--network_path',
+@click.option('--estimated_network_path',
               default='./cloned_network_weights.pt')
 @click.option('--folder_location',
               default='./baseline/helicopter_env/')
@@ -56,7 +56,7 @@ from utils import flush
 @click.option('--sample_from_env', is_flag=True)
 def train_behavior_cloning(training_steps, testing_steps,
                            mini_batch_size, learning_rate,  number_of_epochs, network_size,
-                           folder_location, dataset_file, network_path,
+                           folder_location, dataset_file, estimated_network_path,
                            state_shape, nb_actions, sample_from_env,
                            entropy_coefficient,
                            device, seed, experiment_name, config_file):
@@ -66,7 +66,7 @@ def train_behavior_cloning(training_steps, testing_steps,
     out_folder = os.path.join(os.getenv("PT_OUTPUT_DIR", './'), 'logs/' + experiment_name)
     data_dir = os.getenv("PT_DATA_DIR", os.path.join(folder_location))
     dataset_path = os.path.join(data_dir, dataset_file)
-    network_path = os.path.join(os.path.dirname(dataset_path), network_path)
+    estimated_network_path = os.path.join(os.path.dirname(dataset_path), estimated_network_path)
 
     logger = SummaryWriter(out_folder)
 
@@ -76,7 +76,7 @@ def train_behavior_cloning(training_steps, testing_steps,
 
     # create model
     estimated_baseline_policy = EstimatedBaseline(network_size=network_size, network_path=None, state_shape=state_shape,
-                                         nb_actions=nb_actions, device=device, seed=seed, temperature=0)
+                                                  nb_actions=nb_actions, device=device, seed=seed, temperature=0)
 
     # define loss and optimizer
     nll_loss_function = nn.NLLLoss()
@@ -200,7 +200,7 @@ def train_behavior_cloning(training_steps, testing_steps,
             total_loss.backward()
             optimizer.step()
 
-    def test(data, total_steps):
+    def test(data):
         total_loss = 0
         for step in range(testing_steps):
 
@@ -219,7 +219,7 @@ def train_behavior_cloning(training_steps, testing_steps,
             total_loss += loss.item()
         average_loss = total_loss/testing_steps
         if average_loss < smaller_testing_loss:
-            estimated_baseline_policy.dump_network(network_path)
+            estimated_baseline_policy.dump_network(estimated_network_path)
         return average_loss
 
     for epoch in range(number_of_epochs):
@@ -229,11 +229,11 @@ def train_behavior_cloning(training_steps, testing_steps,
         flush(logger)
         update_lr(optimizer, epoch, start_learning_rate=learning_rate)
 
-    final_policy = EstimatedBaseline(network_size=network_size, network_path=network_path,
+    final_policy = EstimatedBaseline(network_size=network_size, network_path=estimated_network_path,
                                      state_shape=state_shape, nb_actions=nb_actions, device=device,
                                      seed=seed, temperature=0)
     mean, decile, centile = final_policy.evaluate_baseline(env, number_of_steps=10000, number_of_epochs=300)
-    with open(network_path.replace('.pt', '_performance.csv'), 'w') as f:
+    with open(estimated_network_path.replace('.pt', '_performance.csv'), 'w') as f:
         f.write('mean, decile, centile\n')
         f.write(','.join([str(mean), str(decile), str(centile)]))
         f.write('\n')
@@ -244,7 +244,8 @@ class EstimatedBaseline(Baseline):
         state_tensor = torch.FloatTensor(state).to(self.device).unsqueeze(0)
         policy = self.policy(state_tensor)
         choice = distributions.Categorical(policy).sample()
-        return choice.item(), None, policy, None
+        choice = choice.item()
+        return choice, None, policy, None
 
     def policy(self, state):
         x = self.network.forward(state)
