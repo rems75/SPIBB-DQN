@@ -266,7 +266,7 @@ class BatchExperiment(object):
         elif self.ai.learning_type == 'regular':
             filename = os.path.join(self.folder_name, "dqn_{}_0.csv".format(exp_id))
         else:
-            raise ValueError()
+            raise ValueError("invalid learning type")
         try:
             os.remove(filename)
         except OSError:
