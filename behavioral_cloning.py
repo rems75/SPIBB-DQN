@@ -72,7 +72,7 @@ class BehaviorCloning:
         self.smaller_testing_loss = None
         self.seed = seed
         self.learning_rate = learning_rate
-        self.log_frequency = 200
+        self.log_frequency = 100
         try:
             self.params = yaml.safe_load(open(config_file, 'r'))
         except FileNotFoundError as e:
@@ -246,10 +246,10 @@ class BehaviorCloning:
             losses.append(loss.item())
         average_loss = np.mean(losses)
         if average_loss < self.smaller_testing_loss:
-            print("new small testing loss, overwriting estimated policy")
             self.estimated_baseline_policy.dump_network(self.estimated_network_path)
             self.smaller_testing_loss = average_loss
-            print("new policy saved to {}".format(self.estimated_network_path))
+            print("\n>>> best testing accuracy so far: {:7.3f}\n>>> new policy saved to {}\n".format(average_loss,
+                                                                                         self.estimated_network_path))
         return average_loss
 
     def run_training(self):
