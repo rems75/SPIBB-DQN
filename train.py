@@ -98,6 +98,7 @@ def run(config_file, options):
               params['minimum_count'], ' >>>>> Kappa >>>>> ',
               params['kappa'], ' >>>>> ', flush=True)
         print('\n')
+        print("\nPROGRESS: {0:02.2f}%\n".format(ex / params['num_experiments'] * 100), flush=True)
         ai = AI(baseline, state_shape=env.state_shape, nb_actions=env.nb_actions, action_dim=params['action_dim'],
                 reward_dim=params['reward_dim'], history_len=params['history_len'], gamma=params['gamma'],
                 learning_rate=params['learning_rate'], epsilon=params['epsilon'], final_epsilon=params['final_epsilon'],
