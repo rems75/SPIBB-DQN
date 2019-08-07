@@ -50,6 +50,7 @@ from utils import flush
               default='config.yaml',
               help="config file to instantiate env and baseline to train sampling from environment")
 @click.option('--sample_from_env', is_flag=True)
+@click.option('--update_learning_rate', is_flag=True)
 def train_behavior_cloning(**kwargs):
     x = BehaviorCloning(**kwargs)
     x.run_training()
@@ -60,7 +61,7 @@ class BehaviorCloning:
                  mini_batch_size, learning_rate, number_of_epochs, network_size,
                  folder_location, dataset_file, estimated_network_path, sample_from_env,
                  entropy_coefficient,
-                 device, seed, experiment_name, config_file):
+                 device, seed, experiment_name, config_file, update_learning_rate):
         self.training_steps = training_steps
         self.testing_steps = testing_steps
         self.mini_batch_size = mini_batch_size
@@ -72,7 +73,8 @@ class BehaviorCloning:
         self.smaller_testing_loss = None
         self.seed = seed
         self.learning_rate = learning_rate
-        self.log_frequency = 100
+        self.update_learning_rate = update_learning_rate
+        self.log_frequency = 200
         try:
             self.params = yaml.safe_load(open(config_file, 'r'))
         except FileNotFoundError as e:
@@ -193,8 +195,8 @@ class BehaviorCloning:
             # compute entropy of the behavior policy
             behavior_policy_entropy = torch.mean(distributions.Categorical(behavior_policy).entropy())
             mean_perfomance, _, _ = self.estimated_baseline_policy.evaluate_baseline(self.env,
-                                                                                     number_of_steps=20,
-                                                                                     number_of_epochs=100,
+                                                                                     number_of_steps=300,
+                                                                                     number_of_epochs=20,
                                                                                      verbose=False)
 
         self.log_stats(behavior_policy_entropy, entropy_bonus, estimated_policy_entropy, mean_perfomance, mse_loss,
@@ -259,7 +261,8 @@ class BehaviorCloning:
             self.train(epoch)
 
             flush(self.logger)
-            update_lr(self.optimizer, epoch, start_learning_rate=self.learning_rate)
+            if self.update_learning_rate:
+                self.update_lr(epoch)
 
         print("training complete")
         mean, decile, centile = self.estimated_baseline_policy.evaluate_baseline(self.env, number_of_steps=10000,
@@ -283,6 +286,12 @@ class BehaviorCloning:
             f.write('\n')
         print("saved policy performance, mean:{}, centile {}, centile {}".format(mean, decile, centile))
 
+    def update_lr(self, epoch):
+        new_learning_rate = self.learning_rate / (epoch + 2)
+        print(">>>> new learning rate: {}".format(new_learning_rate))
+        for g in self.optimizer.param_groups:
+            g['lr'] = new_learning_rate
+
 
 class EstimatedBaseline(Baseline):
     def inference(self, state):
@@ -295,12 +304,6 @@ class EstimatedBaseline(Baseline):
     def policy(self, state):
         x = self.network.forward(state)
         return torch.softmax(x, dim=1)
-
-
-def update_lr(optimizer, epoch, start_learning_rate):
-    new_learning_rate = start_learning_rate / (epoch + 2)
-    for g in optimizer.param_groups:
-        g['lr'] = new_learning_rate
 
 
 if __name__ == "__main__":
