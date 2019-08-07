@@ -168,14 +168,14 @@ class Baseline(object):
 
         all_rewards.sort()
         mean, decile, centile = np.mean(all_rewards), 0, 0
+        if number_of_epochs > 10:
+            decile = np.mean(all_rewards[:int(number_of_epochs / 10)])
+        if number_of_epochs > 100:
+            centile = np.mean(all_rewards[:int(number_of_epochs/100)])
         if verbose:
             print("Mean Average: {}.".format(mean), flush=True)
-            if number_of_epochs > 10:
-                decile = np.mean(all_rewards[:int(number_of_epochs / 10)])
-                print("Average decile: {}.".format(decile), flush=True)
-            if number_of_epochs > 100:
-                centile = np.mean(all_rewards[:int(number_of_epochs/100)])
-                print("Average centile: {}".format(centile), flush=True)
+            print("Average decile: {}.".format(decile), flush=True)
+            print("Average centile: {}".format(centile), flush=True)
         return mean, decile, centile
 
 
