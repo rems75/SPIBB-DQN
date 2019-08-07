@@ -312,20 +312,20 @@ class Dataset_Counts(object):
         for i in range(self.size):
             self.c[i] = self.compute_counts(self.s[i])
 
-    def train_test_split(self, test_size=0.2):
+    def train_validation_split(self, test_size=0.2):
         half = int(self.size * (1 - test_size))
         indexes = np.arange(self.size)
         np.random.shuffle(indexes)
         training_indexes = indexes[0:half]
-        testing_indexes = indexes[half:]
+        validation_indexes = indexes[half:]
         return (Dataset_Counts(
                     s=self.s[training_indexes], a=self.a[training_indexes], r=self.r[training_indexes],
                     t=self.t[training_indexes], p=self.p[training_indexes], c=self.c[training_indexes],
                     count_param=self.count_param, dtype=self.dtype, state_shape=self.state_shape,
                     nb_actions=self.nb_actions),
                 Dataset_Counts(
-                    s=self.s[testing_indexes], a=self.a[testing_indexes], r=self.r[testing_indexes],
-                    t=self.t[testing_indexes], p=self.p[testing_indexes], c=self.c[testing_indexes],
+                    s=self.s[validation_indexes], a=self.a[validation_indexes], r=self.r[validation_indexes],
+                    t=self.t[validation_indexes], p=self.p[validation_indexes], c=self.c[validation_indexes],
                     count_param=self.count_param, dtype=self.dtype, state_shape=self.state_shape,
                     nb_actions=self.nb_actions))
 

@@ -18,11 +18,12 @@ from utils import flush
 
 @click.command()
 @click.option('--number_of_epochs',
-              default=100)
-@click.option('--testing_steps',
-              default=10000)
+              default=25)
+@click.option('--validation_steps',
+              default=0,
+              help="sets the number of validation steps per epoch. Default: dataset_validation.size/mini_batch_size ")
 @click.option('--training_steps',
-              default=2000)
+              default=0)
 @click.option('--mini_batch_size',
               default=32)
 @click.option('--learning_rate',
@@ -36,6 +37,9 @@ from utils import flush
               default='./baseline/helicopter_env/')
 @click.option('--dataset_file',
               default='dataset/10000/123/1_0/counts_dataset.pkl')
+@click.option('--validation_size',
+              default=0.2,
+              help="percentage of dataset used during validation")
 @click.option('--device',
               default='cuda')
 @click.option('--seed',
@@ -43,7 +47,7 @@ from utils import flush
 @click.option('--learning_rate',
               default=0.1)
 @click.option('--entropy_coefficient',
-              default=0.0)
+              default=0.1)
 @click.option('--experiment_name',
               default="")
 @click.option('--config_file',
@@ -57,24 +61,15 @@ def train_behavior_cloning(**kwargs):
 
 
 class BehaviorCloning:
-    def __init__(self, training_steps, testing_steps,
+    def __init__(self, training_steps, validation_steps, validation_size,
                  mini_batch_size, learning_rate, number_of_epochs, network_size,
                  folder_location, dataset_file, estimated_network_path, sample_from_env,
                  entropy_coefficient,
                  device, seed, experiment_name, config_file, update_learning_rate):
-        self.training_steps = training_steps
-        self.testing_steps = testing_steps
-        self.mini_batch_size = mini_batch_size
-        self.number_of_epochs = number_of_epochs
-        self.network_size = network_size
-        self.entropy_coefficient = entropy_coefficient
-        self.device = device
+
         self.sample_from_env = sample_from_env
-        self.smaller_testing_loss = None
+        self.smaller_validation_loss = None
         self.seed = seed
-        self.learning_rate = learning_rate
-        self.update_learning_rate = update_learning_rate
-        self.log_frequency = 200
         try:
             self.params = yaml.safe_load(open(config_file, 'r'))
         except FileNotFoundError as e:
@@ -96,7 +91,28 @@ class BehaviorCloning:
 
         # import data
         full_dataset = Dataset_Counts.load_dataset(dataset_path)
-        self.dataset_train, self.dataset_test = full_dataset.train_test_split(test_size=0.2)
+        self.dataset_train, self.dataset_validation = full_dataset.train_validation_split(test_size=validation_size)
+
+        # set training parameters
+        self.mini_batch_size = mini_batch_size
+        self.number_of_epochs = number_of_epochs
+        self.network_size = network_size
+        self.entropy_coefficient = entropy_coefficient
+        self.device = device
+        self.learning_rate = learning_rate
+        self.update_learning_rate = update_learning_rate
+
+        if training_steps != 0:
+            self.training_steps = training_steps
+        else:
+            self.training_steps = int(self.dataset_train.size / self.mini_batch_size)
+        if validation_steps != 0:
+            self.validation_steps = validation_steps
+        else:
+            self.validation_steps = int(self.dataset_validation.size / self.mini_batch_size)
+        self.log_frequency = int(self.training_steps / 10)
+        print("Training with {} training steps and {} validation steps ".format(self.training_steps,
+                                                                                  self.validation_steps))
 
         # create model
         self.estimated_baseline_policy = EstimatedBaseline(network_size=network_size, network_path=None,
@@ -176,7 +192,7 @@ class BehaviorCloning:
                            estimated_policy_entropy, nll_loss, total_loss, total_steps):
 
         # run test on test_dataset
-        testing_loss = self.test()
+        validation_loss = self.test()
 
         # compute stats
         with torch.no_grad():
@@ -200,16 +216,16 @@ class BehaviorCloning:
                                                                                      verbose=False)
 
         self.log_stats(behavior_policy_entropy, entropy_bonus, estimated_policy_entropy, mean_perfomance, mse_loss,
-                       mse_loss_true_policy, nll_loss, testing_loss, total_loss, total_steps)
+                       mse_loss_true_policy, nll_loss, validation_loss, total_loss, total_steps)
 
     def log_stats(self, behavior_policy_entropy, entropy_bonus, estimated_policy_entropy, mean_perfomance, mse_loss,
-                  mse_loss_true_policy, nll_loss, testing_loss, total_loss, total_steps):
+                  mse_loss_true_policy, nll_loss, validation_loss, total_loss, total_steps):
         s = 'step {:7d}, training: '
         s += 'nll{:7.3f}, '
         s += 'entropy_bonus {:7.3f}, '
         s += 'total_loss {:7.3f} '
         s += 'nll_loss_minus_pi_b_entropy {:7.3f} '
-        s += 'testing accuracy: {:7.3f} '
+        s += 'validation accuracy: {:7.3f} '
         s += 'estimated policy performance {:7.3f} '
         nll_loss_minus_pi_b_entropy = total_loss.item() - behavior_policy_entropy.item()
         print(s.format(total_steps,
@@ -217,7 +233,7 @@ class BehaviorCloning:
                        entropy_bonus.item(),
                        total_loss.item(),
                        nll_loss_minus_pi_b_entropy,
-                       testing_loss,
+                       validation_loss,
                        mean_perfomance))
         self.logger.add_scalar("training/nll_loss", nll_loss.item(), total_steps)
         self.logger.add_scalar("training/entropy_bonus", entropy_bonus.item(), total_steps)
@@ -227,13 +243,13 @@ class BehaviorCloning:
         self.logger.add_scalar("estimated_policy/entropy", estimated_policy_entropy.item(), total_steps)
         self.logger.add_scalar("estimated_policy/mse_a", mse_loss.item(), total_steps)
         self.logger.add_scalar("estimated_policy/mse_pi_b", mse_loss_true_policy.item(), total_steps)
-        self.logger.add_scalar("testing/neg_log_likelihood", testing_loss, total_steps)
+        self.logger.add_scalar("validation/neg_log_likelihood", validation_loss, total_steps)
 
     def test(self):
         losses = []
-        for step in range(self.testing_steps):
+        for step in range(self.validation_steps):
             # sample mini_batch
-            s, a, pi, r, s2, t, c, pi2, cl = self.dataset_test.sample(mini_batch_size=self.mini_batch_size,
+            s, a, pi, r, s2, t, c, pi2, cl = self.dataset_validation.sample(mini_batch_size=self.mini_batch_size,
                                                                       full_batch=True)
             batch_states = torch.FloatTensor(s).to(self.device)
             batch_states = torch.squeeze(batch_states)
@@ -247,15 +263,15 @@ class BehaviorCloning:
                 loss = self.nll_loss_function(torch.log(estimated_policy), target)
             losses.append(loss.item())
         average_loss = np.mean(losses)
-        if average_loss < self.smaller_testing_loss:
+        if average_loss < self.smaller_validation_loss:
             self.estimated_baseline_policy.dump_network(self.estimated_network_path)
-            self.smaller_testing_loss = average_loss
-            print("\n>>> best testing accuracy so far: {:7.3f}\n>>> new policy saved to {}\n".format(average_loss,
+            self.smaller_validation_loss = average_loss
+            print("\n>>> best validation accuracy so far: {:7.3f}\n>>> new policy saved to {}\n".format(average_loss,
                                                                                          self.estimated_network_path))
         return average_loss
 
     def run_training(self):
-        self.smaller_testing_loss = float('inf')
+        self.smaller_validation_loss = float('inf')
         for epoch in range(self.number_of_epochs):
             print("\nPROGRESS: {0:02.2f}%\n".format(epoch / self.number_of_epochs * 100), flush=True)
             self.train(epoch)
@@ -264,6 +280,7 @@ class BehaviorCloning:
             if self.update_learning_rate:
                 self.update_lr(epoch)
 
+        print("\nPROGRESS: {0:02.2f}%\n".format((epoch+0.9) / self.number_of_epochs * 100), flush=True)
         print("training complete")
         mean, decile, centile = self.estimated_baseline_policy.evaluate_baseline(self.env, number_of_steps=10000,
                                                                                  number_of_epochs=300, verbose=False)
