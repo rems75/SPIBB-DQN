@@ -259,7 +259,7 @@ class BatchExperiment(object):
         if self.ai.learning_type == 'soft_sort':
             filename = os.path.join(self.folder_name, "soft_{}_{}.csv".format(exp_id, self.ai.epsilon_soft))
         elif self.ai.learning_type == 'ramdp':
-            filename = os.path.join(self.folder_name, "ramdp_{}_{:.2f}.csv".format(exp_id, self.ai.kappa))
+            filename = os.path.join(self.folder_name, "ramdp_{}_{:.3f}.csv".format(exp_id, self.ai.kappa))
         elif self.ai.learning_type.startswith('pi_b'):
             filename = "{}_{}_{}.csv".format(self.ai.learning_type, exp_id, self.ai.minimum_count)
             filename = os.path.join(self.folder_name, filename)
