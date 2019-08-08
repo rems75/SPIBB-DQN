@@ -6,7 +6,7 @@ import yaml
 import numpy as np
 
 from torch import nn
-from torch.nn import functional as F
+from torch.nn import functional
 from torch import distributions
 from dataset import Dataset_Counts
 from tensorboardX import SummaryWriter
@@ -84,7 +84,8 @@ class BehaviorCloning:
         log_path = os.path.join(os.getenv("PT_OUTPUT_DIR", './'), 'logs/' + experiment_name)
         data_dir = os.getenv("PT_DATA_DIR", os.path.join(folder_location))
         dataset_path = os.path.join(data_dir, dataset_file)
-        self.estimated_network_path = os.path.join(os.path.dirname(dataset_path), estimated_network_path)
+        self.output_folder = os.path.dirname(dataset_path)
+        self.estimated_network_path = os.path.join(self.output_folder, estimated_network_path)
 
         # start
         self.logger = SummaryWriter(log_path)
@@ -112,7 +113,7 @@ class BehaviorCloning:
             self.validation_steps = int(self.dataset_validation.size / self.mini_batch_size)
         self.log_frequency = int(self.training_steps / 10)
         print("Training with {} training steps and {} validation steps ".format(self.training_steps,
-                                                                                  self.validation_steps))
+                                                                                self.validation_steps))
 
         # create model
         self.estimated_baseline_policy = EstimatedBaseline(network_size=network_size, network_path=None,
@@ -192,7 +193,7 @@ class BehaviorCloning:
                            estimated_policy_entropy, nll_loss, total_loss, total_steps):
 
         # run test on test_dataset
-        validation_loss = self.test()
+        validation_loss = self.validation(training_step=total_steps)
 
         # compute stats
         with torch.no_grad():
@@ -202,24 +203,26 @@ class BehaviorCloning:
             one_hot_behavior_policy = torch.FloatTensor(one_hot_behavior_policy).to(self.device)
 
             # compute MSE loss of estimated probability with one_hot policy
-            mse_loss = F.mse_loss(estimated_policy, one_hot_behavior_policy)
+            mse_loss = functional.mse_loss(estimated_policy, one_hot_behavior_policy)
 
             # compute MSE with true policy
             behavior_policy = torch.FloatTensor(behavior_policy).to(self.device)
-            mse_loss_true_policy = F.mse_loss(estimated_policy, behavior_policy)
+            mse_loss_true_policy = functional.mse_loss(estimated_policy, behavior_policy)
 
+            kl_div = torch.mean(distributions.kl.kl_divergence(distributions.Categorical(estimated_policy),
+                                                               distributions.Categorical(behavior_policy)))
             # compute entropy of the behavior policy
             behavior_policy_entropy = torch.mean(distributions.Categorical(behavior_policy).entropy())
-            mean_perfomance, _, _ = self.estimated_baseline_policy.evaluate_baseline(self.env,
-                                                                                     number_of_steps=300,
-                                                                                     number_of_epochs=20,
-                                                                                     verbose=False)
+            mean_performance, _, _ = self.estimated_baseline_policy.evaluate_baseline(self.env,
+                                                                                      number_of_steps=10000,
+                                                                                      number_of_epochs=1,
+                                                                                      verbose=False)
 
-        self.log_stats(behavior_policy_entropy, entropy_bonus, estimated_policy_entropy, mean_perfomance, mse_loss,
-                       mse_loss_true_policy, nll_loss, validation_loss, total_loss, total_steps)
+        self.log_stats(behavior_policy_entropy, entropy_bonus, estimated_policy_entropy, mean_performance, mse_loss,
+                       mse_loss_true_policy, nll_loss, validation_loss, total_loss, kl_div, total_steps)
 
     def log_stats(self, behavior_policy_entropy, entropy_bonus, estimated_policy_entropy, mean_perfomance, mse_loss,
-                  mse_loss_true_policy, nll_loss, validation_loss, total_loss, total_steps):
+                  mse_loss_true_policy, nll_loss, validation_loss, total_loss,  kl_div, total_steps):
         s = 'step {:7d}, training: '
         s += 'nll{:7.3f}, '
         s += 'entropy_bonus {:7.3f}, '
@@ -244,13 +247,14 @@ class BehaviorCloning:
         self.logger.add_scalar("estimated_policy/mse_a", mse_loss.item(), total_steps)
         self.logger.add_scalar("estimated_policy/mse_pi_b", mse_loss_true_policy.item(), total_steps)
         self.logger.add_scalar("validation/neg_log_likelihood", validation_loss, total_steps)
+        self.logger.add_scalar("estimated_policy/kl_divergence", kl_div, total_steps)
 
-    def test(self):
+    def validation(self, training_step):
         losses = []
         for step in range(self.validation_steps):
             # sample mini_batch
             s, a, pi, r, s2, t, c, pi2, cl = self.dataset_validation.sample(mini_batch_size=self.mini_batch_size,
-                                                                      full_batch=True)
+                                                                            full_batch=True)
             batch_states = torch.FloatTensor(s).to(self.device)
             batch_states = torch.squeeze(batch_states)
 
@@ -266,8 +270,8 @@ class BehaviorCloning:
         if average_loss < self.smaller_validation_loss:
             self.estimated_baseline_policy.dump_network(self.estimated_network_path)
             self.smaller_validation_loss = average_loss
-            print("\n>>> best validation accuracy so far: {:7.3f}\n>>> new policy saved to {}\n".format(average_loss,
-                                                                                         self.estimated_network_path))
+            print("\n>>> new policy: validation accuracy: {:7.3f}".format(average_loss))
+            self.evaluate_learned_policy(training_step)
         return average_loss
 
     def run_training(self):
@@ -281,27 +285,30 @@ class BehaviorCloning:
                 self.update_lr(epoch)
 
         print("\nPROGRESS: {0:02.2f}%\n".format((epoch+0.9) / self.number_of_epochs * 100), flush=True)
-        print("training complete")
-        mean, decile, centile = self.estimated_baseline_policy.evaluate_baseline(self.env, number_of_steps=10000,
-                                                                                 number_of_epochs=300, verbose=False)
-        print("current policy performance, mean:{}, centile {}, centile {}".format(mean, decile, centile))
 
-        self.evaluate_learned_policy()
+        self.evaluate_learned_policy(self.number_of_epochs * self.training_steps, save_results=True,
+                                     number_of_epochs=300, number_of_steps=10000)
 
-    def evaluate_learned_policy(self):
+    def evaluate_learned_policy(self, step, save_results=False,  number_of_steps=10000, number_of_epochs=10):
         print("evaluating policy cloned")
         # load best policy, evaluate and save data
-        final_policy = EstimatedBaseline(network_size=self.network_size,
-                                         network_path=self.estimated_network_path,
-                                         state_shape=self.params['state_shape'], nb_actions=self.params['nb_actions'],
-                                         device=self.device, seed=self.seed, temperature=0)
-        mean, decile, centile = final_policy.evaluate_baseline(self.env, number_of_steps=10000, number_of_epochs=300,
-                                                               verbose=False)
+        current_policy = EstimatedBaseline(network_size=self.network_size,
+                                           network_path=self.estimated_network_path,
+                                           state_shape=self.params['state_shape'], nb_actions=self.params['nb_actions'],
+                                           device=self.device, seed=self.seed, temperature=0,
+                                           results_folder=os.path.dirname(self.output_folder))
+        mean, decile, centile = current_policy.evaluate_baseline(self.env,
+                                                                 number_of_steps=number_of_steps,
+                                                                 number_of_epochs=number_of_epochs,
+                                                                 verbose=False, save_results=save_results)
         with open(self.estimated_network_path.replace('.pt', '_performance.csv'), 'w') as f:
             f.write('mean, decile, centile\n')
             f.write(','.join([str(mean), str(decile), str(centile)]))
             f.write('\n')
-        print("saved policy performance, mean:{}, centile {}, centile {}".format(mean, decile, centile))
+        print("saved policy performance, mean:{}, decile {}, centile {}".format(mean, decile, centile))
+        self.logger.add_scalar("results/mean", mean, step)
+        self.logger.add_scalar("results/decile", decile, step)
+        self.logger.add_scalar("results/centile", centile, step)
 
     def update_lr(self, epoch):
         new_learning_rate = self.learning_rate / (epoch + 2)
