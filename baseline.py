@@ -20,7 +20,7 @@ COUNTS_SUFFIX = 'counts_dataset.pkl'
 class Baseline(object):
 
     def __init__(self, network_size, network_path=None, state_shape=[4], nb_actions=9,
-                 device='cuda', seed=123, temperature=1.0, normalize=255.):
+                 device='cuda', seed=123, temperature=1.0, normalize=255., results_folder='/results'):
 
         self.seed = seed
         self.state_shape = state_shape
@@ -31,8 +31,8 @@ class Baseline(object):
         self.normalize = normalize
         self.network = self._build_network()
         if network_path is not None:
-            self.directory = os.path.dirname(network_path)
             self._load_model(network_path)
+        self.directory = results_folder
 
         print("Using soft q-values with a temperature of {}".format(temperature), flush=True)
 
@@ -259,7 +259,8 @@ def run(args):
     baseline = Baseline(network_size=params['network_size'],
                         network_path=os.path.join(args.baseline_dir, args.baseline_name),
                         state_shape=params['state_shape'], nb_actions=params['nb_actions'], device=args.device,
-                        seed=args.seed, temperature=args.temperature, normalize=params['normalize'])
+                        seed=args.seed, temperature=args.temperature, normalize=params['normalize'],
+                        results_folder=args.baseline_dir)
 
     if args.evaluate_baseline:
         baseline.evaluate_baseline(env, args.eval_steps, args.eval_epochs, args.noise_factor, save_results=True)
