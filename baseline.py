@@ -1,9 +1,11 @@
 import argparse
-import numpy as np
 import os
 import time
 import torch
 import yaml
+import csv
+
+import numpy as np
 
 from dataset import DataSet, Dataset_Counts
 from utils import softmax
@@ -29,6 +31,7 @@ class Baseline(object):
         self.normalize = normalize
         self.network = self._build_network()
         if network_path is not None:
+            self.directory = os.path.dirname(network_path)
             self._load_model(network_path)
 
         print("Using soft q-values with a temperature of {}".format(temperature), flush=True)
@@ -126,7 +129,7 @@ class Baseline(object):
         dataset.save_dataset(file_path)
         return dataset
 
-    def evaluate_baseline(self, env, number_of_steps, number_of_epochs, noise_factor=1.0, verbose=True):
+    def evaluate_baseline(self, env, number_of_steps, number_of_epochs, noise_factor=1.0, verbose=True, save_results=None):
         """ Evaluate the baseline number_of_epochs times for number_of_steps steps.
 
         Args:
@@ -144,7 +147,7 @@ class Baseline(object):
             last_state = np.empty(tuple(env.state_shape), dtype=np.uint8)
             last_state = self._reset(env)
             term, start_time = False, time.time()
-            rewards, all_nb_steps, current_reward, nb_steps, total_nb_steps = [], [], 0, 0, 0
+            rewards, all_nb_steps, current_reward, nb_steps, total_nb_steps, nb_episodes = [], [], 0, 0, 0, 0
 
             while total_nb_steps < number_of_steps:
                 if not term:
@@ -158,13 +161,28 @@ class Baseline(object):
                     rewards.append(current_reward)
                     all_nb_steps.append(nb_steps)
                     total_nb_steps += nb_steps
+                    nb_episodes += 1
                     current_reward, nb_steps = 0, 0
                     term = False
 
-            all_rewards.append(np.mean(rewards))
+            average_reward = np.mean(rewards)
+            average_steps = np.mean(all_nb_steps)
+
+            all_rewards.append(average_reward)
             if verbose:
-                print("Average reward: {}. Average steps: {}".format(np.mean(rewards), np.mean(all_nb_steps)), flush=True)
+                print("Average reward: {}. Average steps: {}".format(average_reward, average_steps), flush=True)
                 print("Epoch finished in {:.2f} seconds.\n".format(time.time() - start_time), flush=True)
+
+            if save_results:
+                filename = "{}_{}.csv".format(type(self).__name__, epoch)
+                evaluation_dir = os.path.join(self.directory, 'evaluation')
+                if not os.path.exists(evaluation_dir):
+                    os.makedirs(evaluation_dir)
+                filepath = os.path.join(evaluation_dir, filename)
+                with open(filepath, 'w') as f:
+                    csv_file_writer = csv.writer(f)
+                    csv_file_writer.writerow([epoch, average_reward, average_steps, nb_episodes])
+                print('>>>>> Results written in {}.'.format(filepath), flush=True)
 
         all_rewards.sort()
         mean, decile, centile = np.mean(all_rewards), 0, 0
@@ -176,6 +194,7 @@ class Baseline(object):
             print("Mean Average: {}.".format(mean), flush=True)
             print("Average decile: {}.".format(decile), flush=True)
             print("Average centile: {}".format(centile), flush=True)
+
         return mean, decile, centile
 
 
@@ -243,7 +262,7 @@ def run(args):
                         seed=args.seed, temperature=args.temperature, normalize=params['normalize'])
 
     if args.evaluate_baseline:
-        baseline.evaluate_baseline(env, args.eval_steps, args.eval_epochs, args.noise_factor)
+        baseline.evaluate_baseline(env, args.eval_steps, args.eval_epochs, args.noise_factor, save_results=True)
 
     if args.generate_dataset:
         print("Generating dataset with actual size {}...".format(args.dataset_size), flush=True)
