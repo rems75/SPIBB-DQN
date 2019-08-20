@@ -84,7 +84,7 @@ class BehaviorCloning:
         log_path = os.path.join(os.getenv("PT_OUTPUT_DIR", './'), 'logs/' + experiment_name)
         data_dir = os.getenv("PT_DATA_DIR", os.path.join(folder_location))
         dataset_path = os.path.join(data_dir, dataset_file)
-        self.output_folder = os.path.dirname(dataset_path)
+        self.output_folder = os.getenv("PT_OUTPUT_DIR", os.path.dirname(dataset_path))
         self.estimated_network_path = os.path.join(self.output_folder, estimated_network_path)
 
         # start
