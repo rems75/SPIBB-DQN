@@ -8,7 +8,7 @@ from ai import AI
 from experiment import DQNExperiment, BatchExperiment
 from dataset import Dataset_Counts
 from environments import environment
-from baseline import Baseline
+from baseline import Baseline, EstimatedBaseline
 
 
 @click.command()
@@ -52,7 +52,6 @@ def run(config_file, options):
         dataset_path = params['dataset_path']
 
         if params['learning_type'] == 'pi_b_hat_behavior_cloning':
-            from behavioral_cloning import EstimatedBaseline
             baseline_path = os.path.join(os.path.dirname(dataset_path), 'cloned_network_weights.pt')
             baseline = EstimatedBaseline(
                 params['network_size'], network_path=baseline_path, state_shape=params['state_shape'],
@@ -62,6 +61,9 @@ def run(config_file, options):
             baseline = Baseline(params['network_size'], network_path=baseline_path, state_shape=params['state_shape'],
                                 nb_actions=params['nb_actions'], device=params['device'], seed=params['seed'],
                                 temperature=params['baseline_temp'], normalize=params['normalize'])
+        elif params['learning_type'] == 'pi_b_hat_count_based':
+            # TODO use an extension of Baseline to keep things consistent
+            baseline = None
         else:
             # no baseline, should use counters to estimate policy
             baseline = None

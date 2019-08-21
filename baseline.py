@@ -6,6 +6,7 @@ import yaml
 import csv
 
 import numpy as np
+from torch import distributions
 
 from dataset import DataSet, Dataset_Counts
 from utils import softmax
@@ -196,6 +197,19 @@ class Baseline(object):
             print("Average centile: {}".format(centile), flush=True)
 
         return mean, decile, centile
+
+
+class EstimatedBaseline(Baseline):
+    def inference(self, state):
+        state_tensor = torch.FloatTensor(state).to(self.device).unsqueeze(0)
+        policy = self.policy(state_tensor)
+        choice = distributions.Categorical(policy).sample()
+        choice = choice.item()
+        return choice, None, policy, None
+
+    def policy(self, state):
+        x = self.network.forward(state)
+        return torch.softmax(x, dim=1)
 
 
 def compute_counts(dataset, overwrite=False, count_param=0.2):

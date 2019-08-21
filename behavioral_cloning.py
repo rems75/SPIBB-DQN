@@ -11,7 +11,7 @@ from torch import distributions
 from dataset import Dataset_Counts
 from tensorboardX import SummaryWriter
 
-from baseline import Baseline
+from baseline import Baseline, EstimatedBaseline
 from environments import environment
 from utils import flush
 
@@ -312,19 +312,6 @@ class BehaviorCloning:
         print(">>>> new learning rate: {}".format(new_learning_rate))
         for g in self.optimizer.param_groups:
             g['lr'] = new_learning_rate
-
-
-class EstimatedBaseline(Baseline):
-    def inference(self, state):
-        state_tensor = torch.FloatTensor(state).to(self.device).unsqueeze(0)
-        policy = self.policy(state_tensor)
-        choice = distributions.Categorical(policy).sample()
-        choice = choice.item()
-        return choice, None, policy, None
-
-    def policy(self, state):
-        x = self.network.forward(state)
-        return torch.softmax(x, dim=1)
 
 
 if __name__ == "__main__":
