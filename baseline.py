@@ -20,7 +20,7 @@ COUNTS_SUFFIX = 'counts_dataset.pkl'
 class Baseline(object):
 
     def __init__(self, network_size, network_path=None, state_shape=[4], nb_actions=9,
-                 device='cuda', seed=123, temperature=1.0, normalize=255., results_folder='/results'):
+                 device='cuda', seed=123, temperature=1.0, normalize=255., results_folder='./results'):
 
         self.seed = seed
         self.state_shape = state_shape
@@ -129,7 +129,7 @@ class Baseline(object):
         dataset.save_dataset(file_path)
         return dataset
 
-    def evaluate_baseline(self, env, number_of_steps, number_of_epochs, noise_factor=1.0, verbose=True, save_results=None):
+    def evaluate_baseline(self, env, number_of_steps, number_of_epochs, noise_factor=1.0, verbose=True, save_results=False):
         """ Evaluate the baseline number_of_epochs times for number_of_steps steps.
 
         Args:
@@ -260,7 +260,7 @@ def run(args):
                         network_path=os.path.join(args.baseline_dir, args.baseline_name),
                         state_shape=params['state_shape'], nb_actions=params['nb_actions'], device=args.device,
                         seed=args.seed, temperature=args.temperature, normalize=params['normalize'],
-                        results_folder=args.baseline_dir)
+                        results_folder=os.getenv('PT_OUTPUT_DIR', args.baseline_dir))
 
     if args.evaluate_baseline:
         baseline.evaluate_baseline(env, args.eval_steps, args.eval_epochs, args.noise_factor, save_results=True)
@@ -268,7 +268,7 @@ def run(args):
     if args.generate_dataset:
         print("Generating dataset with actual size {}...".format(args.dataset_size), flush=True)
         dataset = baseline.generate_dataset(
-            env, os.path.join(args.baseline_dir, args.dataset_dir), params, dataset_size=args.dataset_size,
+            env, args.dataset_dir, params, dataset_size=args.dataset_size,
             overwrite=args.overwrite, noise_factor=args.noise_factor)
 
         compute_counts(dataset, overwrite=args.overwrite, count_param=args.count_param)

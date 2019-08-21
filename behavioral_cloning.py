@@ -83,9 +83,9 @@ class BehaviorCloning:
         # set paths for data and output path
         log_path = os.path.join(os.getenv("PT_OUTPUT_DIR", './'), 'logs/' + experiment_name)
         data_dir = os.getenv("PT_DATA_DIR", os.path.join(folder_location))
-        dataset_path = os.path.join(data_dir, dataset_file)
+        dataset_path = dataset_file
         self.output_folder = os.getenv("PT_OUTPUT_DIR", os.path.dirname(dataset_path))
-        self.estimated_network_path = os.path.join(self.output_folder, estimated_network_path)
+        self.estimated_network_path = os.path.join(os.path.dirname(dataset_path), estimated_network_path)
 
         # start
         self.logger = SummaryWriter(log_path)
@@ -120,6 +120,12 @@ class BehaviorCloning:
                                                            state_shape=self.params['state_shape'],
                                                            nb_actions=self.params['nb_actions'], device=device,
                                                            seed=seed, temperature=0)
+        self.best_policy = EstimatedBaseline(network_size=network_size, network_path=None,
+                                             state_shape=self.params['state_shape'],
+                                             nb_actions=self.params['nb_actions'], device=device,
+                                             seed=seed, temperature=0,
+                                             results_folder=self.output_folder)
+        self.best_policy._copy_weight_from(self.best_policy.network.state_dict())
 
         # define loss and optimizer
         self.nll_loss_function = nn.NLLLoss()
@@ -268,7 +274,7 @@ class BehaviorCloning:
             losses.append(loss.item())
         average_loss = np.mean(losses)
         if average_loss < self.smaller_validation_loss:
-            self.estimated_baseline_policy.dump_network(self.estimated_network_path)
+            self.best_policy._copy_weight_from(self.estimated_baseline_policy.network.state_dict())
             self.smaller_validation_loss = average_loss
             print("\n>>> new policy: validation accuracy: {:7.3f}".format(average_loss))
             self.evaluate_learned_policy(training_step)
@@ -277,35 +283,26 @@ class BehaviorCloning:
     def run_training(self):
         self.smaller_validation_loss = float('inf')
         for epoch in range(self.number_of_epochs):
-            print("\nPROGRESS: {0:02.2f}%\n".format(epoch / self.number_of_epochs * 100), flush=True)
+            print("\nPROGRESS: {0:02.2f}%\n".format(epoch / self.number_of_epochs * 50), flush=True)
             self.train(epoch)
 
             flush(self.logger)
             if self.update_learning_rate:
                 self.update_lr(epoch)
 
-        print("\nPROGRESS: {0:02.2f}%\n".format((epoch+0.9) / self.number_of_epochs * 100), flush=True)
+        print("\nPROGRESS: {0:02.2f}%\n".format((epoch+0.9) / self.number_of_epochs * 50), flush=True)
 
         self.evaluate_learned_policy(self.number_of_epochs * self.training_steps, save_results=True,
-                                     number_of_epochs=300, number_of_steps=10000)
+                                     number_of_epochs=1, number_of_steps=10000)
+        self.best_policy.dump_network(self.estimated_network_path)
 
-    def evaluate_learned_policy(self, step, save_results=False,  number_of_steps=10000, number_of_epochs=10):
-        print("evaluating policy cloned")
-        # load best policy, evaluate and save data
-        current_policy = EstimatedBaseline(network_size=self.network_size,
-                                           network_path=self.estimated_network_path,
-                                           state_shape=self.params['state_shape'], nb_actions=self.params['nb_actions'],
-                                           device=self.device, seed=self.seed, temperature=0,
-                                           results_folder=os.path.dirname(self.output_folder))
-        mean, decile, centile = current_policy.evaluate_baseline(self.env,
-                                                                 number_of_steps=number_of_steps,
-                                                                 number_of_epochs=number_of_epochs,
-                                                                 verbose=False, save_results=save_results)
-        with open(self.estimated_network_path.replace('.pt', '_performance.csv'), 'w') as f:
-            f.write('mean, decile, centile\n')
-            f.write(','.join([str(mean), str(decile), str(centile)]))
-            f.write('\n')
-        print("saved policy performance, mean:{}, decile {}, centile {}".format(mean, decile, centile))
+    def evaluate_learned_policy(self, step, save_results=False,  number_of_steps=10000, number_of_epochs=1):
+        # evaluate best policy and save stats
+        mean, decile, centile = self.best_policy.evaluate_baseline(self.env,
+                                                                   number_of_steps=number_of_steps,
+                                                                   number_of_epochs=number_of_epochs,
+                                                                   verbose=False, save_results=save_results)
+        print("selected policy performance, mean:{}, decile {}, centile {}".format(mean, decile, centile))
         self.logger.add_scalar("results/mean", mean, step)
         self.logger.add_scalar("results/decile", decile, step)
         self.logger.add_scalar("results/centile", centile, step)

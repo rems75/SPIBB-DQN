@@ -49,7 +49,7 @@ def run(config_file, options):
 
     if params['batch']:
         baseline_path = os.path.join(DATA_DIR, params['baseline_path'])
-        dataset_path = os.path.join(DATA_DIR, params['dataset_path'])
+        dataset_path = params['dataset_path']
 
         if params['learning_type'] == 'pi_b_hat_behavior_cloning':
             from behavioral_cloning import EstimatedBaseline

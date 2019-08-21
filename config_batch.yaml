@@ -6,7 +6,7 @@ folder_location: './baseline/'
 folder_name: 'helicopter_env'
 network_path: 'weights.pt'
 batch: False
-dataset_path: 'dataset/1000/123/1_0/counts_dataset.pkl'
+dataset_path: './baseline/helicopter_env/dataset/1000/123/1_0/counts_dataset.pkl'
 baseline_path: 'weights.pt'
 
 seed: 123
