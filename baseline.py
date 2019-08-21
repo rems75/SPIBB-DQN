@@ -212,6 +212,25 @@ class ClonedBaseline(Baseline):
         return torch.softmax(x, dim=1)
 
 
+class SimilarityBaseline(Baseline):
+    def __init__(self, dataset, seed=123, results_folder='./results'):
+
+        self.dataset = dataset
+        self.seed = seed
+        self.directory = results_folder
+        print("baseline policy based on similarity instantiated", flush=True)
+
+    def inference(self, state):
+        # TODO implement this method
+        policy = np.ones(len(state))/len(state)
+        choice = 0
+        return choice, None, policy, None
+
+    def policy(self, state):
+        # TODO implement this method
+        return np.ones(len(state))/len(state)
+
+
 def compute_counts(dataset, overwrite=False, count_param=0.2):
     """ Compute the pseudo-counts for each state-action pair present in the dataset following the methodology described in the paper.
 

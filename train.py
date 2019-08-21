@@ -8,7 +8,7 @@ from ai import AI
 from experiment import DQNExperiment, BatchExperiment
 from dataset import Dataset_Counts
 from environments import environment
-from baseline import Baseline, ClonedBaseline
+from baseline import Baseline, ClonedBaseline, SimilarityBaseline
 
 
 @click.command()
@@ -48,9 +48,13 @@ def run(config_file, options):
     env = environment.Environment(params["domain"], params, random_state)
 
     if params['batch']:
-        baseline_path = os.path.join(DATA_DIR, params['baseline_path'])
         dataset_path = params['dataset_path']
+        print("\nLoading dataset from file {}".format(dataset_path), flush=True)
+        if not os.path.exists(dataset_path):
+            raise ValueError("The dataset file does not exist")
+        dataset = Dataset_Counts.load_dataset(dataset_path)
 
+        baseline_path = os.path.join(DATA_DIR, params['baseline_path'])
         if params['learning_type'] == 'pi_b_hat_behavior_cloning':
             baseline_path = os.path.join(os.path.dirname(dataset_path), 'cloned_network_weights.pt')
             baseline = ClonedBaseline(
@@ -63,15 +67,16 @@ def run(config_file, options):
                                 temperature=params['baseline_temp'], normalize=params['normalize'])
         elif params['learning_type'] == 'pi_b_hat_count_based':
             # TODO use an extension of Baseline to keep things consistent
-            baseline = None
+            baseline = SimilarityBaseline(dataset=dataset, seed=params['seed'],
+                                          results_folder=os.getenv('PT_OUTPUT_DIR',
+                                                                   os.path.join(os.path.dirname(dataset_path),
+                                                                                "results")))
+            baseline.evaluate_baseline(env, number_of_steps=10000, number_of_epochs=1,
+                                       verbose=True, save_results=False)
         else:
             # no baseline, should use counters to estimate policy
             baseline = None
 
-        print("\nLoading dataset from file {}".format(dataset_path), flush=True)
-        if not os.path.exists(dataset_path):
-            raise ValueError("The dataset file does not exist")
-        dataset = Dataset_Counts.load_dataset(dataset_path)
         folder_name = os.getenv("PT_OUTPUT_DIR", os.path.dirname(dataset_path))
         print("Data with counts loaded: {} samples".format(dataset.size), flush=True)
         expt = BatchExperiment(dataset=dataset, env=env, folder_name=folder_name, episode_max_len=params['episode_max_len'],
