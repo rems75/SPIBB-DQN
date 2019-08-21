@@ -8,7 +8,7 @@ from ai import AI
 from experiment import DQNExperiment, BatchExperiment
 from dataset import Dataset_Counts
 from environments import environment
-from baseline import Baseline, EstimatedBaseline
+from baseline import Baseline, ClonedBaseline
 
 
 @click.command()
@@ -53,7 +53,7 @@ def run(config_file, options):
 
         if params['learning_type'] == 'pi_b_hat_behavior_cloning':
             baseline_path = os.path.join(os.path.dirname(dataset_path), 'cloned_network_weights.pt')
-            baseline = EstimatedBaseline(
+            baseline = ClonedBaseline(
                 params['network_size'], network_path=baseline_path, state_shape=params['state_shape'],
                 nb_actions=params['nb_actions'], device=params['device'], seed=params['seed'],
                 temperature=params['baseline_temp'], normalize=params['normalize'])

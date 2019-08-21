@@ -199,7 +199,7 @@ class Baseline(object):
         return mean, decile, centile
 
 
-class EstimatedBaseline(Baseline):
+class ClonedBaseline(Baseline):
     def inference(self, state):
         state_tensor = torch.FloatTensor(state).to(self.device).unsqueeze(0)
         policy = self.policy(state_tensor)
