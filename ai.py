@@ -269,9 +269,8 @@ class AI(object):
         """
         states = np.expand_dims(states, 0)
         q_values = self.get_q(states)[0][0]
-        if self.learning_type in ['pi_b', 'pi_b_hat', 'pi_b_hat_count_based'] and self.minimum_count > 0.0:
+        if self.learning_type.startswith('pi_b') and self.minimum_count > 0.0:
             mask = (counts < self.minimum_count)
-
             self.logger.add_scalar('bootstrapped_interaction', np.sum(mask), self.interaction_step)
             if self.learning_type == 'pi_b':
                 _, _, policy, _ = self.baseline.inference(states[0])

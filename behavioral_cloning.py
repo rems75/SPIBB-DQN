@@ -277,7 +277,7 @@ class BehaviorCloning:
             self.best_policy._copy_weight_from(self.cloned_baseline_policy.network.state_dict())
             self.smaller_validation_loss = average_loss
             print("\n>>> new policy: validation accuracy: {:7.3f}".format(average_loss))
-            self.evaluate_learned_policy(training_step)
+            self.evaluate_learned_policy(training_step, number_of_steps=10000)
         return average_loss
 
     def run_training(self):
@@ -293,10 +293,10 @@ class BehaviorCloning:
         print("\nPROGRESS: {0:02.2f}%\n".format((epoch+0.9) / self.number_of_epochs * 50), flush=True)
 
         self.evaluate_learned_policy(self.number_of_epochs * self.training_steps, save_results=True,
-                                     number_of_epochs=1, number_of_steps=10000)
+                                     number_of_epochs=1, number_of_steps=100000)
         self.best_policy.dump_network(self.cloned_network_path)
 
-    def evaluate_learned_policy(self, step, save_results=False,  number_of_steps=10000, number_of_epochs=1):
+    def evaluate_learned_policy(self, step, save_results=False,  number_of_steps=100000, number_of_epochs=1):
         # evaluate best policy and save stats
         mean, decile, centile = self.best_policy.evaluate_baseline(self.env,
                                                                    number_of_steps=number_of_steps,

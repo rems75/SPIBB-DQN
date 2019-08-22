@@ -66,10 +66,9 @@ def run(config_file, options):
                                 nb_actions=params['nb_actions'], device=params['device'], seed=params['seed'],
                                 temperature=params['baseline_temp'], normalize=params['normalize'])
         elif params['learning_type'] == 'pi_b_hat_count_based':
-            # TODO use an extension of Baseline to keep things consistent
             baseline = SimilarityBaseline(dataset=dataset, seed=params['seed'], nb_actions=params['nb_actions'],
                                           results_folder=os.getenv('PT_OUTPUT_DIR', os.path.dirname(dataset_path)))
-            baseline.evaluate_baseline(env, number_of_steps=10000, number_of_epochs=1,
+            baseline.evaluate_baseline(env, number_of_steps=100000, number_of_epochs=1,
                                        verbose=True, save_results=True)
         else:
             # no baseline, should use counters to estimate policy
