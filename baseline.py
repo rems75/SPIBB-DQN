@@ -213,22 +213,27 @@ class ClonedBaseline(Baseline):
 
 
 class SimilarityBaseline(Baseline):
-    def __init__(self, dataset, seed=123, results_folder='./results'):
+    def __init__(self, dataset, nb_actions=9, seed=123, results_folder='./results'):
 
         self.dataset = dataset
         self.seed = seed
         self.directory = results_folder
+        self.nb_actions = nb_actions
         print("baseline policy based on similarity instantiated", flush=True)
 
     def inference(self, state):
-        # TODO implement this method
-        policy = np.ones(len(state))/len(state)
-        choice = 0
+        policy = self.policy(state)
+        choice = np.random.choice(self.nb_actions, 1, p=policy)[0]
         return choice, None, policy, None
 
     def policy(self, state):
-        # TODO implement this method
-        return np.ones(len(state))/len(state)
+        counts = self.dataset.compute_counts(state)
+        total_state_visits = counts.sum()
+        if total_state_visits > 0:
+            return counts / total_state_visits
+        else:
+            return np.ones(self.nb_actions) / self.nb_actions
+
 
 
 def compute_counts(dataset, overwrite=False, count_param=0.2):
