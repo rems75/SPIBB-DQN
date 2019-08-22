@@ -146,25 +146,22 @@ class Baseline(object):
             if verbose:
                 print("Starting epoch {}".format(epoch), flush=True)
             last_state = np.empty(tuple(env.state_shape), dtype=np.uint8)
-            last_state = self._reset(env)
-            term, start_time = False, time.time()
+            start_time = time.time()
             rewards, all_nb_steps, current_reward, nb_steps, total_nb_steps, nb_episodes = [], [], 0, 0, 0, 0
-
             while total_nb_steps < number_of_steps:
-                if not term:
+                last_state = self._reset(env)
+                term = False
+                current_reward, nb_steps = 0, 0
+                while not term:
                     action, _, _, _ = self.inference(last_state)
                     new_obs, new_reward, term, _ = env.step(action)
                     last_state = self._update_state(new_obs, last_state)
                     current_reward += new_reward
                     nb_steps += 1
-                else:
-                    last_state = self._reset(env)
-                    rewards.append(current_reward)
-                    all_nb_steps.append(nb_steps)
-                    total_nb_steps += nb_steps
-                    nb_episodes += 1
-                    current_reward, nb_steps = 0, 0
-                    term = False
+                rewards.append(current_reward)
+                all_nb_steps.append(nb_steps)
+                total_nb_steps += nb_steps
+                nb_episodes += 1
 
             average_reward = np.mean(rewards)
             average_steps = np.mean(all_nb_steps)
