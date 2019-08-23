@@ -53,12 +53,12 @@ class AI(object):
         self.optimizer = optim.RMSprop(self.network.parameters(), lr=self.learning_rate, alpha=0.95, eps=1e-07)
 
         # SPIBB parameters
-        if baseline is not None:
-            self.baseline = baseline
-        else:
+        if "online" in learning_type:
             self.baseline = Baseline(network_size=self.network_size, state_shape=state_shape, nb_actions=nb_actions,
                                      device=self.device, temperature=baseline_temp)
             self.baseline._copy_weight_from(self.network.state_dict())
+        else:
+            self.baseline = baseline
 
         self.learning_type = learning_type
         self.kappa = kappa
@@ -160,18 +160,17 @@ class AI(object):
             # All state/action counts for state s2
             c = torch.FloatTensor(c).to(self.device)
             # e est le vecteur d'erreur
-            e = torch.sqrt(1 / (c + 1e-9))
+            e = torch.sqrt(1 / (c + 1e-9)).to(self.device)
             # Policy on state s2 (estimated using softmax on the q-values)
-            pi_b = torch.FloatTensor(pi_b).to(self.device)
-            _pi_b = torch.FloatTensor(pi_b).to(self.device)
-            allowed_error = self.epsilon_soft * torch.ones((self.minibatch_size))
+            _pi_b = pi_b.clone().detach()
+            allowed_error = (self.epsilon_soft * torch.ones((self.minibatch_size))).to(self.device)
             if self.ddqn:
                 _q2_net = self.network(s2 / self.normalize).detach()
             else:
                 _q2_net = q2
             sorted_qs, arg_sorted_qs = torch.sort(_q2_net, dim=1)
             # Sort errors and baseline worst -> best actions
-            dp = torch.arange(self.minibatch_size)
+            dp = torch.arange(self.minibatch_size).to(self.device)
             pi_b = pi_b[dp[:, None], arg_sorted_qs]
             sorted_e = e[dp[:, None], arg_sorted_qs]
             for a_bot in range(self.nb_actions):
@@ -240,6 +239,17 @@ class AI(object):
 
         elif self.learning_type == 'soft_sort':
             bellman_target = _get_bellman_target_soft_sort(c, pi_b)
+        elif self.learning_type == 'soft_sort':
+            bellman_target = _get_bellman_target_soft_sort(c, pi_b)
+        elif self.learning_type == "soft_sort_count_based":
+            total_states_visits = c.sum(axis=1)
+            total_states_visits[term] = 1  # avoid division by zero (terminal transitions are ignored)
+            pi_b_hat = c / total_states_visits[:, np.newaxis]
+            pi_b_hat = torch.FloatTensor(pi_b_hat).to(self.device)
+            bellman_target = _get_bellman_target_soft_sort(c, pi_b_hat)
+        elif self.learning_type == "soft_sort_behavior_cloning":
+            pi_b_hat = self.baseline.policy(s2)
+            bellman_target = _get_bellman_target_soft_sort(c, pi_b_hat)
         else:
             raise ValueError('We did not recognize that learning type')
 
@@ -309,9 +319,22 @@ class AI(object):
             pi_b[np.argmax(q_values - mask*MAX_Q)] += np.maximum(0, 1 - np.sum(pi_b))
             pi_b /= np.sum(pi_b)
             return pi_b
-        elif self.learning_type == 'soft_sort' and self.epsilon_soft > 0.0:
+        elif self.learning_type.startswith('soft_sort') and self.epsilon_soft > 0.0:
+            if self.learning_type == 'soft_sort':
+                _, _, policy, _ = self.baseline.inference(states[0])
+            elif self.learning_type == 'soft_sort_count_based':
+                # estimate policy according to visits counter
+                total_state_visits = counts.sum()
+                if total_state_visits > 0:
+                    policy = counts/total_state_visits
+                    self.logger.add_scalar('randompolicy', 0, self.interaction_step)
+                else:
+                    policy = np.ones(self.nb_actions) / self.nb_actions
+                    self.logger.add_scalar('randompolicy', 1, self.interaction_step)
+            elif self.learning_type == 'soft_sort_behavior_cloning':
+                batch_states = torch.FloatTensor(states).to(self.device)
+                policy = self.baseline.policy(batch_states).detach().cpu().numpy()[0]
             e = np.sqrt(1 / (np.array(counts) + 1e-9))
-            _, _, policy, _ = self.baseline.inference(states[0])
             pi_b = np.array(policy)
             allowed_error = self.epsilon_soft
             A_bot = np.argsort(q_values)

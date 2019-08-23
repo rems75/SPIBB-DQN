@@ -55,17 +55,17 @@ def run(config_file, options):
         dataset = Dataset_Counts.load_dataset(dataset_path)
 
         baseline_path = os.path.join(DATA_DIR, params['baseline_path'])
-        if params['learning_type'] == 'pi_b_hat_behavior_cloning':
+        if 'behavior_cloning' in params['learning_type']:
             baseline_path = os.path.join(os.path.dirname(dataset_path), 'cloned_network_weights.pt')
             baseline = ClonedBaseline(
                 params['network_size'], network_path=baseline_path, state_shape=params['state_shape'],
-                nb_actions=params['nb_actions'], device=params['device'], seed=params['seed'],
+                nb_actions=params['nb_actions'], device=device, seed=params['seed'],
                 temperature=params['baseline_temp'], normalize=params['normalize'])
-        elif params['learning_type'] == 'pi_b':
+        elif params['learning_type'] in ['pi_b', 'soft_sort']:
             baseline = Baseline(params['network_size'], network_path=baseline_path, state_shape=params['state_shape'],
-                                nb_actions=params['nb_actions'], device=params['device'], seed=params['seed'],
+                                nb_actions=params['nb_actions'], device=device, seed=params['seed'],
                                 temperature=params['baseline_temp'], normalize=params['normalize'])
-        elif params['learning_type'] == 'pi_b_hat_count_based':
+        elif 'count_based' in params['learning_type']:
             baseline = SimilarityBaseline(dataset=dataset, seed=params['seed'], nb_actions=params['nb_actions'],
                                           results_folder=os.getenv('PT_OUTPUT_DIR', os.path.dirname(dataset_path)))
             baseline.evaluate_baseline(env, number_of_steps=100000, number_of_epochs=1,

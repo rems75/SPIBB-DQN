@@ -256,7 +256,7 @@ class BatchExperiment(object):
         self.keep_all_logs = keep_all_logs
 
     def do_epochs(self, number_of_epochs=1, steps_per_test=10000, exp_id=0, passes_on_dataset=1, **kwargs):
-        if self.ai.learning_type == 'soft_sort':
+        if self.ai.learning_type.startswith('soft_sort'):
             filename = os.path.join(self.folder_name, "soft_{}_{}.csv".format(exp_id, self.ai.epsilon_soft))
         elif self.ai.learning_type == 'ramdp':
             filename = os.path.join(self.folder_name, "ramdp_{}_{:.3f}.csv".format(exp_id, self.ai.kappa))
@@ -278,7 +278,7 @@ class BatchExperiment(object):
             begin = time.time()
             print('=' * 30, flush=True)
             print('>>>>> Epoch  ' + str(epoch) + '/' + str(number_of_epochs - 1) + '  >>>>>', flush=True)
-            for _ in tqdm(range(passes_on_dataset), unit="pass", file=sys.stdout, miniters=50, maxinterval=600):
+            for pass_on_dataset in tqdm(range(passes_on_dataset), unit="pass", file=sys.stdout, miniters=50, maxinterval=600):
                 steps = 0
                 while steps < self.dataset.size:
                     mini_batch = self.dataset.sample(self.ai.minibatch_size, full_batch=True)
@@ -289,6 +289,8 @@ class BatchExperiment(object):
                     if 0 <= total_steps % max(20000, self.dataset.size) < self.ai.minibatch_size:
                         self.ai.update_lr(updates)
                         updates += 1
+                if pass_on_dataset % 50 == 0:
+                    print('', flush=True)
 
             print('>>>>> Training ran in {} seconds.'.format(time.time() - begin), flush=True)
             print('>>>>> Start testing.', flush=True)
