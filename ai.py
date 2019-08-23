@@ -286,7 +286,7 @@ class AI(object):
                         self.logger.add_scalar('randompolicy', 1, self.interaction_step)
                 else:
                     batch_states = torch.FloatTensor(states).to(self.device)
-                    policy = self.baseline.policy(batch_states).detach().numpy()[0]
+                    policy = self.baseline.policy(batch_states).detach().cpu().numpy()[0]
             pi_b = np.multiply(mask, policy)
             pi_b[np.argmax(q_values - mask*MAX_Q)] += np.maximum(0, 1 - np.sum(pi_b))
             pi_b /= np.sum(pi_b)
