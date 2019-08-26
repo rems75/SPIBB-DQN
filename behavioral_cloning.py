@@ -27,7 +27,7 @@ from utils import flush
 @click.option('--mini_batch_size',
               default=32)
 @click.option('--learning_rate',
-              default=0.01,
+              default=0.1,
               help="learning rate for optimizer")
 @click.option('--network_size',
               default='dense')
