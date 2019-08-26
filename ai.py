@@ -230,7 +230,8 @@ class AI(object):
                 pi_b_hat = c / total_states_visits[:, np.newaxis]
                 pi_b_hat = torch.FloatTensor(pi_b_hat).to(self.device)
             else:
-                pi_b_hat = self.baseline.policy(s2)
+                with torch.no_grad():
+                    pi_b_hat = self.baseline.policy(s2)
             bellman_target = _get_bellman_target_pi_b(c, pi_b_hat)
         elif self.learning_type == 'online_pi_b':
             bellman_target = _get_bellman_target_online_pi_b(c, pi_b)
@@ -248,7 +249,8 @@ class AI(object):
             pi_b_hat = torch.FloatTensor(pi_b_hat).to(self.device)
             bellman_target = _get_bellman_target_soft_sort(c, pi_b_hat)
         elif self.learning_type == "soft_sort_behavior_cloning":
-            pi_b_hat = self.baseline.policy(s2)
+            with torch.no_grad():
+                pi_b_hat = self.baseline.policy(s2)
             bellman_target = _get_bellman_target_soft_sort(c, pi_b_hat)
         else:
             raise ValueError('We did not recognize that learning type')
