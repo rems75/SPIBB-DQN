@@ -325,7 +325,7 @@ if __name__ == '__main__':
     parser.add_argument('--evaluate_baseline',
                         action="store_true", help='evaluate the baseline')
     parser.add_argument('--eval_steps', type=int, default=100000)
-    parser.add_argument('--eval_epochs', type=int, default=300)
+    parser.add_argument('--eval_epochs', type=int, default=1000)
 
     # Arguments for the dataset generation
     parser.add_argument('--generate_dataset',
