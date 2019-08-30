@@ -43,7 +43,7 @@ def run(config_file, options):
     random_state = np.random.RandomState(params['seed'])
     device = torch.device(params["device"])
 
-    DATA_DIR = os.getenv("PT_DATA_DIR", os.path.join(params['folder_location'], params['folder_name']))
+    DATA_DIR = os.path.join(params['folder_location'], params['folder_name'])
 
     env = environment.Environment(params["domain"], params, random_state)
 
