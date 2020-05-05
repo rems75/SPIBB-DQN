@@ -4,34 +4,24 @@ Utilities
 
 import logging
 import numpy as np
-from hashlib import sha1
 import pandas as pd
-import sys
-# import matplotlib as mpl
-# mpl.use('Agg')
-# import matplotlib.pyplot as plt
+import time
 
 
 logger = logging.getLogger(__name__)
 
 
-def distance(x1, x2):
-  return np.linalg.norm(x1-x2)
-
-
-def similarite(x1, x2, param, weights=None):
-  return max(0, 1 - distance(x1, x2) / param)
 
 
 def softmax(x, temperature=1.0, axis=0):
-  """Compute softmax values for each sets of scores in x."""
-  if temperature > 0:
-    e_x = np.exp((x - np.max(x)) / temperature)
-    return e_x / e_x.sum(axis=axis)
-  else:
-    e_x = np.zeros(x.shape)
-    e_x[np.argmax(x)] = 1.0
-    return e_x
+    """Compute softmax values for each sets of scores in x."""
+    if temperature > 0:
+        e_x = np.exp((x - np.max(x)) / temperature)
+        return e_x / e_x.sum(axis=axis)
+    else:
+        e_x = np.zeros(x.shape)
+        e_x[np.argmax(x)] = 1.0
+        return e_x
 
 
 def human_evaluation(env, agent, human_trajectories, use_soc_state=True):
@@ -45,7 +35,7 @@ def human_evaluation(env, agent, human_trajectories, use_soc_state=True):
         agent_reward = 0 # NOT  including reward accumulated along human trajectory
         s = env.get_soc_state() if use_soc_state else env.get_pixel_state()
         while not terminal:
-            action = agent.get_action(s, evaluate=True)
+            action, policy = agent.get_action_and_policy(s, evaluate=True)
             pixel_state, r, terminal, soc_state = env.act(action)
             s = soc_state if use_soc_state else pixel_state
             agent_reward += r
@@ -64,6 +54,19 @@ def write_to_csv(data={}, loc="data.csv"):
         df.to_csv(loc)
 
 
+def flush(writer):
+    try:
+        path = writer.file_writer.event_writer._ev_writer._py_recordio_writer.path
+        writer.file_writer.event_writer._ev_writer._py_recordio_writer._writer.flush()
+        while True:
+            if writer.file_writer.event_writer._event_queue.empty():
+                break
+            time.sleep(0.1)
+        writer.file_writer.event_writer._ev_writer._py_recordio_writer._writer.close()
+        writer.file_writer.event_writer._ev_writer._py_recordio_writer._writer = open(path, 'ab')
+    except:
+        pass
+
 class Font:
     purple = '\033[95m'
     cyan = '\033[96m'
@@ -79,6 +82,14 @@ class Font:
 
 
 class ExperienceReplay(object):
+    """
+    maintains a batch of max_size past experiences
+
+    if a new experience is added and the dataset is full it deletes the oldest experience
+
+    it also handles the concatenation of history_len observations
+    """
+
     def __init__(self, max_size=100, history_len=1, state_shape=None, action_dim=1, reward_dim=1, state_dtype=np.float32):
         self.size = 0
         self.head = 0

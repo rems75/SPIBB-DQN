@@ -1,10 +1,10 @@
-import numpy as np
-from utils import ExperienceReplay
-from model import SmallDenseNetwork, DenseNetwork, Network, LargeNetwork, NatureNetwork
 import torch
-import torch.nn as nn
+
+import numpy as np
 import torch.optim as optim
-import sys
+
+from utils import ExperienceReplay
+from model import build_network
 
 
 # Upper bound on q-values. Just used as an artefact
@@ -35,7 +35,7 @@ class AI(object):
         self.update_freq = update_freq
         self.update_counter = 0
         self.normalize = normalize
-        self.learning_frequency = learning_frequency
+        self.learning_frequency = learning_frequency  # frequency that the target network is updated
         self.replay_max_size = replay_max_size
         self.transitions = ExperienceReplay(max_size=self.replay_max_size, history_len=history_len,
                                             state_shape=state_shape, action_dim=action_dim, reward_dim=reward_dim)
@@ -54,57 +54,33 @@ class AI(object):
         self.kappa = kappa
         self.minimum_count = minimum_count
         self.epsilon_soft = epsilon_soft
+        self.training_step = 0
+        self.interaction_step = 0  # counts interactions with the environment (during training and evaluation)
+        self.logger = None
 
     def _build_network(self):
-        if self.network_size == 'small':
-            return Network()
-        elif self.network_size == 'large':
-            return LargeNetwork(state_shape=self.state_shape, nb_channels=4, nb_actions=self.nb_actions, device=self.device)
-        elif self.network_size == 'nature':
-            return NatureNetwork(state_shape=self.state_shape, nb_channels=4, nb_actions=self.nb_actions, device=self.device)
-        elif self.network_size == 'dense':
-            return DenseNetwork(state_shape=self.state_shape[0], nb_actions=self.nb_actions, device=self.device)
-        elif self.network_size == 'small_dense':
-            return SmallDenseNetwork(state_shape=self.state_shape[0], nb_actions=self.nb_actions, device=self.device)
-        else:
-            raise ValueError('Invalid network_size.')
+        return build_network(self.state_shape, self.nb_actions, self.device, self.network_size)
 
-    def train_on_batch(self, s, a, r, s2, t):
+    def train_on_batch(self, s, a, _, r, s2, term, c=None, pi_b=None, c1=None):
+        """
+        each parameter is a list containing past experiences
+
+        :param s: current states
+        :param a: actions
+        :param r: rewards
+        :param s2: next states
+        :param term: terminal signals (indicate end of trajectory)
+        :param c: state-action visits for the next state s2
+        :param pi_b: baseline policy pi_b(a|s2) for the next state
+        :param c1: state-action counter related to (s,a)
+        :return: loss
+        """
         s = torch.FloatTensor(s).to(self.device)
         s2 = torch.FloatTensor(s2).to(self.device)
         a = torch.LongTensor(a).to(self.device)
         r = torch.FloatTensor(r).to(self.device)
-        t = torch.FloatTensor(np.float32(t)).to(self.device)
-
-        # Squeeze dimensions for history_len = 1
-        s = torch.squeeze(s)
-        s2 = torch.squeeze(s2)
-        q = self.network(s / self.normalize)
-        q2 = self.target_network(s2 / self.normalize).detach()
-        q_pred = q.gather(1, a.unsqueeze(1)).squeeze(1)
-        if self.ddqn:
-            q2_net = self.network(s2 / self.normalize).detach()
-            q2_max = q2.gather(1, torch.max(q2_net, 1)[1].unsqueeze(1)).squeeze(1)
-        else:
-            q2_max = torch.max(q2, 1)[0]
-        bellman_target = r + self.gamma * q2_max * (1 - t)
-
-        errs = (bellman_target - q_pred).unsqueeze(1)
-        quad = torch.min(torch.abs(errs), 1)[0]
-        lin = torch.abs(errs) - quad
-        loss = torch.sum(0.5 * quad.pow(2) + lin)
-
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-
-    def _train_on_batch(self, s, a, r, s2, t, c, pi_b, c1):
-
-        s = torch.FloatTensor(s).to(self.device)
-        s2 = torch.FloatTensor(s2).to(self.device)
-        a = torch.LongTensor(a).to(self.device)
-        r = torch.FloatTensor(r).to(self.device)
-        t = torch.FloatTensor(np.float32(t)).to(self.device)
+        t = torch.FloatTensor(np.float32(term)).to(self.device)
+        pi_b = torch.FloatTensor(pi_b).to(self.device)
 
         # Squeeze dimensions for history_len = 1
         s = torch.squeeze(s)
@@ -115,7 +91,7 @@ class AI(object):
 
         def _get_q2max(mask=None):
             if mask is None:
-                mask = torch.FloatTensor(np.ones(c.shape)).to(self.device)
+                mask = torch.FloatTensor(np.ones(list(a.shape) + [self.nb_actions])).to(self.device)
             if self.ddqn:
                 q2_net = self.network(s2 / self.normalize).detach()
                 a_max = torch.max(q2_net - (1-mask)*MAX_Q, 1)[1].unsqueeze(1)
@@ -131,37 +107,40 @@ class AI(object):
             # State/action counts for state s1 (used for RaMDP)
             q2_max, _ = _get_q2max()
             c1 = torch.FloatTensor(c1).to(self.device)
-            return r - self.kappa / torch.sqrt(c1) +  (1 - t) * self.gamma * q2_max
+            return r - self.kappa / torch.sqrt(c1) + (1 - t) * self.gamma * q2_max
 
-        def _get_bellman_target_pi_b(c, pi_b):
+        def _get_bellman_target_pi_b(c, pi_b_):
             # All state/action counts for state s2
             c = torch.FloatTensor(c).to(self.device)
-            # Policy on state s2 (estimated using softmax on the q-values)
-            pi_b = torch.FloatTensor(pi_b).to(self.device)
             # Mask for "bootstrapped actions"
-            mask = (c >= self.minimum_count).float()
+            mask_non_bootstrapped = (c >= self.minimum_count).float()
+            # print("mask_non_bootstrapped %d, bootstrapped: %d" % ((c >= self.minimum_count).float().sum(), (c < self.minimum_count).float().sum()))
             # r + (1 - t) * gamma * max_{a s.t. (s',a) not in B}(Q'(s',a)) * proba(actions not in B)
             #   + (1 - t) * gamma * sum(proba(a') Q'(s',a'))
-            q2_max, _ = _get_q2max(mask)
-            return r + (1 - t) * self.gamma * \
-                (q2_max * torch.sum(pi_b*mask, 1) + torch.sum(q2 * pi_b * (1-mask), 1))
+            q2_max, _ = _get_q2max(mask_non_bootstrapped)
+            # (1 - t): if terminal state does not add expected future reward
+
+            self.logger.add_scalar('bootstrapped', torch.sum(1 - mask_non_bootstrapped).item(), self.training_step)
+            return r + (1 - t) * self.gamma * (
+                    q2_max * torch.sum(pi_b_ * mask_non_bootstrapped, 1)  # prob mass of non_bootstrapped (s,a) pairs
+                    + torch.sum(q2 * pi_b_ * (1 - mask_non_bootstrapped), 1))  # prob mass of bootstrapped (s,a) pairs
+
 
         def _get_bellman_target_soft_sort(c, pi_b):
             # All state/action counts for state s2
             c = torch.FloatTensor(c).to(self.device)
             # e est le vecteur d'erreur
-            e = torch.sqrt(1 / (c + 1e-9))
+            e = torch.sqrt(1 / (c + 1e-9)).to(self.device)
             # Policy on state s2 (estimated using softmax on the q-values)
-            pi_b = torch.FloatTensor(pi_b).to(self.device)
-            _pi_b = torch.FloatTensor(pi_b).to(self.device)
-            allowed_error = self.epsilon_soft * torch.ones((self.minibatch_size))
+            _pi_b = pi_b.clone().detach()
+            allowed_error = (self.epsilon_soft * torch.ones((self.minibatch_size))).to(self.device)
             if self.ddqn:
                 _q2_net = self.network(s2 / self.normalize).detach()
             else:
                 _q2_net = q2
             sorted_qs, arg_sorted_qs = torch.sort(_q2_net, dim=1)
             # Sort errors and baseline worst -> best actions
-            dp = torch.arange(self.minibatch_size)
+            dp = torch.arange(self.minibatch_size).to(self.device)
             pi_b = pi_b[dp[:, None], arg_sorted_qs]
             sorted_e = e[dp[:, None], arg_sorted_qs]
             for a_bot in range(self.nb_actions):
@@ -183,8 +162,28 @@ class AI(object):
             bellman_target = _get_bellman_target_dqn()
         elif self.learning_type == 'pi_b':
             bellman_target = _get_bellman_target_pi_b(c, pi_b)
+        elif self.learning_type.startswith('pi_b_hat'):
+            if self.learning_type == "pi_b_hat_count_based":
+                total_states_visits = c.sum(axis=1)
+                total_states_visits[term] = 1  # avoid division by zero (terminal transitions are ignored)
+                pi_b_hat = c / total_states_visits[:, np.newaxis]
+                pi_b_hat = torch.FloatTensor(pi_b_hat).to(self.device)
+            else:
+                with torch.no_grad():
+                    pi_b_hat = self.baseline.policy(s2)
+            bellman_target = _get_bellman_target_pi_b(c, pi_b_hat)
         elif self.learning_type == 'soft_sort':
             bellman_target = _get_bellman_target_soft_sort(c, pi_b)
+        elif self.learning_type == "soft_sort_count_based":
+            total_states_visits = c.sum(axis=1)
+            total_states_visits[term] = 1  # avoid division by zero (terminal transitions are ignored)
+            pi_b_hat = c / total_states_visits[:, np.newaxis]
+            pi_b_hat = torch.FloatTensor(pi_b_hat).to(self.device)
+            bellman_target = _get_bellman_target_soft_sort(c, pi_b_hat)
+        elif self.learning_type == "soft_sort_behavior_cloning":
+            with torch.no_grad():
+                pi_b_hat = self.baseline.policy(s2)
+            bellman_target = _get_bellman_target_soft_sort(c, pi_b_hat)
         else:
             raise ValueError('We did not recognize that learning type')
 
@@ -197,25 +196,61 @@ class AI(object):
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+        self.logger.add_scalar('loss', loss, self.training_step)
+        self.training_step += 1
         return loss
 
     def get_q(self, state):
         state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
         return self.network(state / self.normalize).detach().cpu().numpy()
 
-    def get_max_action(self, states, counts=[]):
+    def get_policy_distribution(self, states, counts):
+        """
+
+        :param states:
+        :param counts: number of times each action was taken in the given state
+        :return: distribution over actions
+        """
         states = np.expand_dims(states, 0)
         q_values = self.get_q(states)[0][0]
-        if self.learning_type == 'pi_b' and self.minimum_count > 0.0:
+        if self.learning_type.startswith('pi_b') and self.minimum_count > 0.0:
             mask = (counts < self.minimum_count)
-            _, _, policy, _ = self.baseline.inference(states[0])
+            self.logger.add_scalar('bootstrapped_interaction', np.sum(mask), self.interaction_step)
+            if self.learning_type == 'pi_b':
+                _, _, policy, _ = self.baseline.inference(states[0])
+            elif self.learning_type.startswith('pi_b_hat'):
+                if self.learning_type == 'pi_b_hat_count_based':
+                    # estimate policy according to visits counter
+                    total_state_visits = counts.sum()
+                    if total_state_visits > 0:
+                        policy = counts/total_state_visits
+                        self.logger.add_scalar('randompolicy', 0, self.interaction_step)
+                    else:
+                        policy = np.ones(self.nb_actions) / self.nb_actions
+                        self.logger.add_scalar('randompolicy', 1, self.interaction_step)
+                else:
+                    batch_states = torch.FloatTensor(states).to(self.device)
+                    policy = self.baseline.policy(batch_states).detach().cpu().numpy()[0]
             pi_b = np.multiply(mask, policy)
             pi_b[np.argmax(q_values - mask*MAX_Q)] += np.maximum(0, 1 - np.sum(pi_b))
             pi_b /= np.sum(pi_b)
-            return np.random.choice(self.nb_actions, size=1, replace=True, p=pi_b)
-        elif self.learning_type == 'soft_sort' and self.epsilon_soft > 0.0:
+            return pi_b
+        elif self.learning_type.startswith('soft_sort') and self.epsilon_soft > 0.0:
+            if self.learning_type == 'soft_sort':
+                _, _, policy, _ = self.baseline.inference(states[0])
+            elif self.learning_type == 'soft_sort_count_based':
+                # estimate policy according to visits counter
+                total_state_visits = counts.sum()
+                if total_state_visits > 0:
+                    policy = counts/total_state_visits
+                    self.logger.add_scalar('randompolicy', 0, self.interaction_step)
+                else:
+                    policy = np.ones(self.nb_actions) / self.nb_actions
+                    self.logger.add_scalar('randompolicy', 1, self.interaction_step)
+            elif self.learning_type == 'soft_sort_behavior_cloning':
+                batch_states = torch.FloatTensor(states).to(self.device)
+                policy = self.baseline.policy(batch_states).detach().cpu().numpy()[0]
             e = np.sqrt(1 / (np.array(counts) + 1e-9))
-            _, _, policy, _ = self.baseline.inference(states[0])
             pi_b = np.array(policy)
             allowed_error = self.epsilon_soft
             A_bot = np.argsort(q_values)
@@ -232,34 +267,30 @@ class AI(object):
                 allowed_error -= mass_top * (sorted_e[a_bot] + e[A_top])
             pi_b[pi_b < 0] = 0
             pi_b /= np.sum(pi_b)
-            return np.random.choice(self.nb_actions, size=1, replace=True, p=pi_b)
+            return pi_b
         elif self.learning_type == 'soft_sort' and self.epsilon_soft == 0.0:
             _, _, policy, _ = self.baseline.inference(states[0])
-            return np.random.choice(self.nb_actions, size=1, replace=True, p=np.array(policy))
+            return policy
         else:
-            return [np.argmax(q_values)]
+            greedy_action = np.argmax(q_values)
+            dist = np.zeros(shape=[self.nb_actions])
+            dist[greedy_action] = 1
+            return dist
 
-    def get_action(self, states, evaluate, counts=[]):
+    def get_action_and_policy(self, states, evaluate, counts=None):
         # get action WITH exploration
         eps = self.epsilon if not evaluate else self.test_epsilon
-        if np.random.binomial(1, eps):
-            return np.random.randint(self.nb_actions)
-        else:
-            return self.get_max_action(states, counts=counts)[0]
 
-    def learn(self):
-        """ Learning from one minibatch """
-        assert self.minibatch_size <= self.transitions.size, 'not enough data in the pool'
-        s, a, r, s2, term = self.transitions.sample(self.minibatch_size)
-        self.train_on_batch(s, a, r, s2, term)
-        if self.update_counter == self.update_freq:
-            self.weight_transfer(from_model=self.network, to_model=self.target_network)
-            self.update_counter = 0
-        else:
-            self.update_counter += 1
+        policy = np.array(self.get_policy_distribution(states, counts=counts))
+
+        policy_with_exploration = policy * (1.-eps) + np.ones(self.nb_actions) * eps
+        policy_with_exploration /= np.sum(policy_with_exploration)
+        action = np.random.choice(self.nb_actions, size=1, replace=True, p=policy_with_exploration)[0]
+        self.interaction_step += 1
+        return action, policy_with_exploration
 
     def learn_on_batch(self, batch):
-        objective = self._train_on_batch(*batch)
+        objective = self.train_on_batch(*batch)
         # updating target network
         if self.update_counter == self.update_freq:
             self.weight_transfer(from_model=self.network, to_model=self.target_network)
@@ -269,6 +300,11 @@ class AI(object):
         return objective
 
     def anneal_eps(self, step):
+        """
+        reduce the probability of taking random actions over time
+        :param step:
+        :return:
+        """
         if self.epsilon > self.final_epsilon:
             decay = (self.start_epsilon - self.final_epsilon) * step / self.decay_steps
             self.epsilon = self.start_epsilon - decay
@@ -279,9 +315,6 @@ class AI(object):
         self.learning_rate = self.start_learning_rate / (epoch + 2)
         for g in self.optimizer.param_groups:
             g['lr'] = self.learning_rate
-
-    def update_eps(self, epoch):
-        self.epsilon = self.start_epsilon / (epoch + 2)
 
     def dump_network(self, weights_file_path):
         torch.save(self.network.state_dict(), weights_file_path)
@@ -300,3 +333,6 @@ class AI(object):
         del _dict['device']  # is not picklable
         del _dict['transitions']  # huge object (if you need the replay buffer, save its contnts with np.save)
         return _dict
+
+    def needs_state_action_counter(self):
+        return self.learning_type in ["pi_b", "pi_b_hat"]

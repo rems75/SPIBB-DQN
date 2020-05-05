@@ -6,7 +6,7 @@ folder_location: './baseline/'
 folder_name: 'helicopter_env'
 network_path: 'weights.pt'
 batch: False
-dataset_path: 'dataset/1000/123/1_0/counts_dataset.pkl'
+dataset_path: './dataset/1000/123/1_0/counts_dataset.pkl'
 baseline_path: 'weights.pt'
 
 seed: 123
@@ -37,7 +37,7 @@ count_param: 0.2
 num_experiments: 15
 num_epochs: 1
 passes_on_dataset: 500
-steps_per_test: 1000
+steps_per_test: 100000
 episode_max_len: 100
 max_start_nullops: 0
 steps_per_epoch: 10000
@@ -55,7 +55,6 @@ network_size: 'dense'  # `large`=nips paper model, `nature`=nature paper model
 gamma: .9
 learning_rate: 0.01
 minibatch_size: 32
-update_freq: 10
 state_shape: [4]
 nb_actions: 9
 history_len: 1

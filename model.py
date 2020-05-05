@@ -5,6 +5,10 @@ floatX = 'float32'
 
 
 def init_weights(m):
+    """
+    initializes the weights of the given module using a uniform distribution
+    sets all the bias parameters to 0
+    """
     if type(m) in [nn.Linear, nn.Conv2d]:
         torch.nn.init.kaiming_uniform_(m.weight)
         m.bias.data.fill_(0.)
@@ -148,3 +152,18 @@ class NatureNetwork(nn.Module):
 
     def _feature_size(self):
         return self.features(torch.zeros(1, 4, 84, 84)).view(-1).size(0)
+
+
+def build_network(state_shape, nb_actions, device, network_size):
+    if network_size == 'small':
+        return Network()
+    elif network_size == 'large':
+        return LargeNetwork(state_shape=state_shape, nb_channels=4, nb_actions=nb_actions, device=device)
+    elif network_size == 'nature':
+        return NatureNetwork(state_shape=state_shape, nb_channels=4, nb_actions=nb_actions, device=device)
+    elif network_size == 'dense':
+        return DenseNetwork(state_shape=state_shape[0], nb_actions=nb_actions, device=device)
+    elif network_size == 'small_dense':
+        return SmallDenseNetwork(state_shape=state_shape[0], nb_actions=nb_actions, device=device)
+    else:
+        raise ValueError('Invalid network_size.')

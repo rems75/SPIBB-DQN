@@ -3,7 +3,7 @@ is_learning: True
 is_testing: True
 test: False
 folder_location: './baseline/'
-folder_name: 'helicopter_env_test'
+folder_name: 'helicopter_env'
 network_path: 'weights.pt'
 batch: False
 
@@ -29,6 +29,7 @@ helicopter_noise: 0.025
 helicopter_noise_v: 0.05
 noise_factor: 1
 helicopter_log: False
+count_param: 0.2
 
 num_experiments: 1
 num_epochs: 20
