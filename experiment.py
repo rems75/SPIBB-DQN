@@ -26,7 +26,7 @@ class DQNExperiment(object):
         self.env = env
         self.ai = ai
         self.history_len = history_len
-        # self.annealing = annealing  # QUESTION: can we remove this parameter? it does not seem to be used
+        # self.annealing = annealing
         self.test_epsilon = test_epsilon
         self.max_start_nullops = max_start_nullops
         self.saving_period = saving_period  # after each `saving_period` epochs, the results so far will be saved.
@@ -111,7 +111,6 @@ class DQNExperiment(object):
 
             self.ai.anneal_eps(epoch * steps_per_epoch)
             self.ai.update_lr(epoch)
-            self.ai.try_update_baseline(epoch)
 
         print("Best performance: {}".format(best_perf), flush=True)
 
@@ -136,10 +135,8 @@ class DQNExperiment(object):
     def evaluate(self, number_of_epochs=1):
         for num in range(number_of_epochs):
             self._do_episode(is_learning=False, evaluate=True)
-        # TODO this only returns the score of the last episode
         return self.score_agent
 
-    # QUESTION: is_learning seems to be the opposite of evaluate, can we use only one?
     def _do_episode(self, is_learning=True, evaluate=False):
         assert (is_learning and not evaluate) or (not is_learning and evaluate)
         rewards = []
@@ -151,11 +148,11 @@ class DQNExperiment(object):
             rewards.append(reward)
             self.score_agent += reward
 
-            if self.dataset_counter.size >= max(self.replay_min_size, self.ai.minibatch_size) and is_learning \
-                    and (self.steps % self.ai.learning_frequency) == 0:
+            if (self.dataset_counter.size >= max(self.replay_min_size, self.ai.minibatch_size)
+                    and is_learning
+                    and (self.steps % self.ai.learning_frequency) == 0):
                 mini_batch = self.dataset_counter.sample(self.ai.minibatch_size)
                 loss = self.ai.learn_on_batch(mini_batch)
-                self.ai.update_boltzmann_parameter(self.episode_num)
 
             if not term and self.last_episode_steps >= self.episode_max_len:
                 print('Reaching maximum number of steps in the current episode.', flush=True)
@@ -165,7 +162,6 @@ class DQNExperiment(object):
     def _step(self, evaluate=False):
         self.last_episode_steps += 1
         if self.ai.needs_state_action_counter():
-            # TODO try to reuse this counts since they are computed again when added to the dataset during training
             counts = self.dataset_counter.compute_counts(self.last_state)
         else:
             counts = None
@@ -179,7 +175,6 @@ class DQNExperiment(object):
                 state = self.last_state[-1].astype('float32')
             else:
                 state = self.last_state.astype('float32')
-            # self.ai.transitions.add(s=state, a=action, r=reward, t=game_over)
             self.dataset_counter.add(s=state, a=action, r=reward, t=game_over, p=policy)
             self.total_training_steps += 1
         self._update_state(new_obs)

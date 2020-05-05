@@ -67,14 +67,14 @@ def run(config_file, options):
                                 temperature=params['baseline_temp'], normalize=params['normalize'])
         elif 'count_based' in params['learning_type']:
             baseline = SimilarityBaseline(dataset=dataset, seed=params['seed'], nb_actions=params['nb_actions'],
-                                          results_folder=os.getenv('PT_OUTPUT_DIR', os.path.dirname(dataset_path)))
+                                          results_folder=os.path.dirname(dataset_path))
             baseline.evaluate_baseline(env, number_of_steps=100000, number_of_epochs=1,
                                        verbose=True, save_results=True)
         else:
             # no baseline, should use counters to estimate policy
             baseline = None
 
-        folder_name = os.getenv("PT_OUTPUT_DIR", os.path.dirname(dataset_path))
+        folder_name = os.path.dirname(dataset_path)
         print("Data with counts loaded: {} samples".format(dataset.size), flush=True)
         expt = BatchExperiment(dataset=dataset, env=env, folder_name=folder_name, episode_max_len=params['episode_max_len'],
                                minimum_count=params['minimum_count'], extra_stochasticity=params['extra_stochasticity'],
@@ -85,7 +85,7 @@ def run(config_file, options):
         if not os.path.exists(DATA_DIR):
             os.makedirs(DATA_DIR)
 
-        folder_name = os.getenv("PT_OUTPUT_DIR", DATA_DIR)
+        folder_name = DATA_DIR
         baseline = None
         expt = DQNExperiment(env=env, ai=None, episode_max_len=params['episode_max_len'], annealing=params['annealing'],
                              history_len=params['history_len'], max_start_nullops=params['max_start_nullops'],
@@ -110,8 +110,7 @@ def run(config_file, options):
                 replay_max_size=params['replay_max_size'], update_freq=params['update_freq'],
                 learning_frequency=params['learning_frequency'], ddqn=params['ddqn'], learning_type=params['learning_type'],
                 network_size=params['network_size'], normalize=params['normalize'], device=device,
-                kappa=params['kappa'], minimum_count=params['minimum_count'], epsilon_soft=params['epsilon_soft'],
-                baseline_update_freq=params["baseline_update_freq"], baseline_temp=params["baseline_temp"])
+                kappa=params['kappa'], minimum_count=params['minimum_count'], epsilon_soft=params['epsilon_soft'])
         expt.ai = ai
         if not params['batch']:
             # resets dataset for online experiment

@@ -136,3 +136,6 @@ logs
 
 pt
 .ptignore
+Pipfile
+Pipfile.lock
+

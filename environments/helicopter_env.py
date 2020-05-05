@@ -36,7 +36,7 @@ class helicopter_action():
 
 class helicopter_env():
 	def __init__(self, time_step=0.1, size=10, noise=0.025, noise_v=0.05, v_max=1, a_max=1, log=False,
-				 episode_max_len=100, seed=123, noise_factor=1):
+							 episode_max_len=100, seed=123, noise_factor=1):
 
 		np.random.seed(seed=seed)
 

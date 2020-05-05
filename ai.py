@@ -5,7 +5,6 @@ import torch.optim as optim
 
 from utils import ExperienceReplay
 from model import build_network
-from baseline import Baseline
 
 
 # Upper bound on q-values. Just used as an artefact
@@ -16,8 +15,7 @@ class AI(object):
     def __init__(self, baseline, state_shape=[4], nb_actions=9, action_dim=1, reward_dim=1, history_len=1, gamma=.99,
                  learning_rate=0.00025, epsilon=0.05, final_epsilon=0.05, test_epsilon=0.0, annealing_steps=1000,
                  minibatch_size=32, replay_max_size=100, update_freq=50, learning_frequency=1, ddqn=False, learning_type='pi_b',
-                 network_size='nature', normalize=1., device=None, kappa=0.003, minimum_count=0, epsilon_soft=0,
-                 baseline_update_freq=0, baseline_temp=0):
+                 network_size='nature', normalize=1., device=None, kappa=0.003, minimum_count=0, epsilon_soft=0):
 
         self.history_len = history_len
         self.state_shape = state_shape
@@ -39,8 +37,6 @@ class AI(object):
         self.normalize = normalize
         self.learning_frequency = learning_frequency  # frequency that the target network is updated
         self.replay_max_size = replay_max_size
-        # TODO instantiate DatasetCounts instead
-        # TODO get an initial dataset for batch experiments
         self.transitions = ExperienceReplay(max_size=self.replay_max_size, history_len=history_len,
                                             state_shape=state_shape, action_dim=action_dim, reward_dim=reward_dim)
         self.ddqn = ddqn
@@ -53,22 +49,14 @@ class AI(object):
         self.optimizer = optim.RMSprop(self.network.parameters(), lr=self.learning_rate, alpha=0.95, eps=1e-07)
 
         # SPIBB parameters
-        if "online" in learning_type:
-            self.baseline = Baseline(network_size=self.network_size, state_shape=state_shape, nb_actions=nb_actions,
-                                     device=self.device, temperature=baseline_temp)
-            self.baseline._copy_weight_from(self.network.state_dict())
-        else:
-            self.baseline = baseline
-
+        self.baseline = baseline
         self.learning_type = learning_type
         self.kappa = kappa
         self.minimum_count = minimum_count
         self.epsilon_soft = epsilon_soft
-        self.baseline_update_freq = baseline_update_freq
         self.training_step = 0
         self.interaction_step = 0  # counts interactions with the environment (during training and evaluation)
         self.logger = None
-        self.boltzmann_parameter = 0.9
 
     def _build_network(self):
         return build_network(self.state_shape, self.nb_actions, self.device, self.network_size)
@@ -104,7 +92,6 @@ class AI(object):
         def _get_q2max(mask=None):
             if mask is None:
                 mask = torch.FloatTensor(np.ones(list(a.shape) + [self.nb_actions])).to(self.device)
-                # mask = torch.FloatTensor(np.ones(c.shape)).to(self.device)
             if self.ddqn:
                 q2_net = self.network(s2 / self.normalize).detach()
                 a_max = torch.max(q2_net - (1-mask)*MAX_Q, 1)[1].unsqueeze(1)
@@ -138,23 +125,6 @@ class AI(object):
                     q2_max * torch.sum(pi_b_ * mask_non_bootstrapped, 1)  # prob mass of non_bootstrapped (s,a) pairs
                     + torch.sum(q2 * pi_b_ * (1 - mask_non_bootstrapped), 1))  # prob mass of bootstrapped (s,a) pairs
 
-        def _get_bellman_target_online_pi_b(c, pi_b_):
-            # All state/action counts for state s2
-            c = torch.FloatTensor(c).to(self.device)
-            # Policy on state s2 (estimated using softmax on the q-values)
-            pi_b_ = torch.FloatTensor(pi_b_).to(self.device)
-            # Mask for "bootstrapped actions"
-            mask_non_bootstrapped = (c >= self.minimum_count).float()
-            # print("mask_non_bootstrapped %d, bootstrapped: %d" % ((c >= self.minimum_count).float().sum(), (c < self.minimum_count).float().sum()))
-            # r + (1 - t) * gamma * max_{a s.t. (s',a) not in B}(Q'(s',a)) * proba(actions not in B)
-            #   + (1 - t) * gamma * sum(proba(a') Q'(s',a'))
-            q2_max, _ = _get_q2max(mask_non_bootstrapped)
-
-            self.logger.add_scalar('bootstrapped', torch.sum(1 - mask_non_bootstrapped).item(), self.training_step)
-            # (1 - t): if terminal state does not add expected future reward
-            return r + (1 - t) * self.gamma * (
-                    q2_max * torch.sum(pi_b_ * mask_non_bootstrapped, 1)  # prob mass of non_bootstrapped (s,a) pairs
-                    + torch.sum(q2 * pi_b_ * (1 - mask_non_bootstrapped), 1))  # prob mass of bootstrapped (s,a) pairs
 
         def _get_bellman_target_soft_sort(c, pi_b):
             # All state/action counts for state s2
@@ -185,39 +155,8 @@ class AI(object):
                 allowed_error -= mass_top * (sorted_e[:, a_bot] + e[dp, A_top])
             return r + (1 - t) * self.gamma * torch.sum(q2 * _pi_b, 1)
 
-        def _get_q2_softmax(mask=None):
-            if mask is None:
-                mask = torch.FloatTensor(np.ones(list(a.shape) + [self.nb_actions])).to(self.device)
-            if self.ddqn:
-                q2_net = self.network(s2 / self.normalize).detach()
-                policy = torch.softmax(self.boltzmann_parameter * (q2_net - (1-mask)*MAX_Q), dim=1)
-            else:
-                policy = torch.softmax(self.boltzmann_parameter * (q2 - (1-mask)*MAX_Q), dim=1)
-            return torch.sum(policy * q2, dim=1)
-
-        def _get_bellman_target_soft_max_dqn():
-            q2_value = _get_q2_softmax()
-            return r + (1 - t) * self.gamma * q2_value.detach()
-
-        def _get_bellman_target_online_pi_b_softmax(c, pi_b_):
-            # All state/action counts for state s2
-            c = torch.FloatTensor(c).to(self.device)
-            # Policy on state s2 (estimated using softmax on the q-values)
-            pi_b_ = torch.FloatTensor(pi_b_).to(self.device)
-            # Mask for "non_bootstrapped actions"
-            mask_non_bootstrapped = (c >= self.minimum_count).float()
-            q2_softmax = _get_q2_softmax(mask_non_bootstrapped)
-
-            self.logger.add_scalar('bootstrapped', torch.sum(1 - mask_non_bootstrapped).item(), self.training_step)
-            # (1 - t): if terminal state does not add expected future reward
-            return r + (1 - t) * self.gamma * (
-                    q2_softmax * torch.sum(pi_b_ * mask_non_bootstrapped, 1)  # prob mass of non_bootstrapped (s,a) pairs
-                    + torch.sum(q2 * pi_b_ * (1 - mask_non_bootstrapped), 1))  # prob mass of bootstrapped (s,a) pairs
-
         if self.learning_type == 'ramdp':
             bellman_target = _get_bellman_target_ramdp(c1)
-        elif self.learning_type == 'soft_max_dqn':
-            bellman_target = _get_bellman_target_soft_max_dqn()
         elif self.learning_type == 'regular' or self.minimum_count == 0:
         # elif self.learning_type == 'regular':
             bellman_target = _get_bellman_target_dqn()
@@ -233,13 +172,6 @@ class AI(object):
                 with torch.no_grad():
                     pi_b_hat = self.baseline.policy(s2)
             bellman_target = _get_bellman_target_pi_b(c, pi_b_hat)
-        elif self.learning_type == 'online_pi_b':
-            bellman_target = _get_bellman_target_online_pi_b(c, pi_b)
-        elif self.learning_type == 'online_pi_b_softmax':
-            bellman_target = _get_bellman_target_online_pi_b_softmax(c, pi_b)
-
-        elif self.learning_type == 'soft_sort':
-            bellman_target = _get_bellman_target_soft_sort(c, pi_b)
         elif self.learning_type == 'soft_sort':
             bellman_target = _get_bellman_target_soft_sort(c, pi_b)
         elif self.learning_type == "soft_sort_count_based":
@@ -277,7 +209,7 @@ class AI(object):
 
         :param states:
         :param counts: number of times each action was taken in the given state
-        :return: action
+        :return: distribution over actions
         """
         states = np.expand_dims(states, 0)
         q_values = self.get_q(states)[0][0]
@@ -299,24 +231,6 @@ class AI(object):
                 else:
                     batch_states = torch.FloatTensor(states).to(self.device)
                     policy = self.baseline.policy(batch_states).detach().cpu().numpy()[0]
-            pi_b = np.multiply(mask, policy)
-            pi_b[np.argmax(q_values - mask*MAX_Q)] += np.maximum(0, 1 - np.sum(pi_b))
-            pi_b /= np.sum(pi_b)
-            return pi_b
-        elif self.learning_type in ['online_pi_b', 'online_pi_b_hat', 'online_pi_b_softmax'] and self.minimum_count > 0.0:
-            mask = (counts < self.minimum_count)
-            self.logger.add_scalar('bootstrapped_interaction', np.sum(mask), self.interaction_step)
-            if self.learning_type == 'online_pi_b':
-                _, _, policy, _ = self.baseline.inference(states[0])
-            else:
-                # estimate policy according to visits counter
-                total_state_visits = counts.sum()
-                if total_state_visits > 0:
-                    policy = counts/total_state_visits
-                    self.logger.add_scalar('randompolicy', 0, self.interaction_step)
-                else:
-                    policy = np.ones(self.nb_actions) / self.nb_actions
-                    self.logger.add_scalar('randompolicy', 1, self.interaction_step)
             pi_b = np.multiply(mask, policy)
             pi_b[np.argmax(q_values - mask*MAX_Q)] += np.maximum(0, 1 - np.sum(pi_b))
             pi_b /= np.sum(pi_b)
@@ -387,7 +301,7 @@ class AI(object):
 
     def anneal_eps(self, step):
         """
-        reduce the probability of taking random actions
+        reduce the probability of taking random actions over time
         :param step:
         :return:
         """
@@ -396,13 +310,6 @@ class AI(object):
             self.epsilon = self.start_epsilon - decay
         if step >= self.decay_steps:
             self.epsilon = self.final_epsilon
-
-    def update_boltzmann_parameter(self, episode):
-        """
-        updates the parameter of the Boltzmann softmax update
-        :param episode
-        """
-        self.boltzmann_parameter = 0.9 * episode**2
 
     def update_lr(self, epoch):
         self.learning_rate = self.start_learning_rate / (epoch + 2)
@@ -428,14 +335,4 @@ class AI(object):
         return _dict
 
     def needs_state_action_counter(self):
-        return self.learning_type in ["pi_b", "pi_b_hat", "online_pi_b", "online_pi_b_hat", "online_pi_b_softmax"]
-
-    def try_update_baseline(self, epoch):
-        # print(">>>> Trying to update baseline")
-        if self.baseline_update_freq and epoch % self.baseline_update_freq == 0:
-            self.update_baseline()
-
-    def update_baseline(self):
-        print(">>>>> Updating baseline policy")
-        self.weight_transfer(self.network, self.baseline.network)
-        # self.baseline._copy_weight_from(self.network.state_dict())
+        return self.learning_type in ["pi_b", "pi_b_hat"]

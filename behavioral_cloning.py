@@ -81,10 +81,10 @@ class BehaviorCloning:
         torch.manual_seed(seed)
 
         # set paths for data and output path
-        log_path = os.path.join(os.getenv("PT_OUTPUT_DIR", './'), 'logs/' + experiment_name)
+        log_path = os.path.join('./logs/' + experiment_name)
         data_dir = folder_location
         dataset_path = dataset_file
-        self.output_folder = os.getenv("PT_OUTPUT_DIR", os.path.dirname(dataset_path))
+        self.output_folder = os.path.dirname(dataset_path)
         self.cloned_network_path = os.path.join(os.path.dirname(dataset_path), cloned_network_path)
 
         # start

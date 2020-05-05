@@ -295,7 +295,7 @@ def run(args):
                         network_path=os.path.join(args.baseline_dir, args.baseline_name),
                         state_shape=params['state_shape'], nb_actions=params['nb_actions'], device=args.device,
                         seed=args.seed, temperature=args.temperature, normalize=params['normalize'],
-                        results_folder=os.getenv('PT_OUTPUT_DIR', args.baseline_dir))
+                        results_folder=args.baseline_dir)
 
     if args.evaluate_baseline:
         baseline.evaluate_baseline(env, args.eval_steps, args.eval_epochs, args.noise_factor, save_results=True)
@@ -310,7 +310,6 @@ def run(args):
 
 
 if __name__ == '__main__':
-    # TODO switch command line options to click like in train.py
     parser = argparse.ArgumentParser(description="Options")
     parser.add_argument('baseline_dir', type=str, default='baseline',
                         help='path of the baseline')

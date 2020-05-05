@@ -19,8 +19,6 @@ minimum_count: 10.0
 epsilon_soft: 1.0
 # kappa corresponds to the kappa parameter in ramdp. Set to 0 for vanilla DQN.
 kappa: 0.003
-# frequency that baseline is updated in the online_spibb algorithm
-baseline_update_freq: 0
 baseline_temp: 0.2
 count_param: 0.2
 

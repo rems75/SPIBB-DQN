@@ -18,8 +18,6 @@ minimum_count: 0.0
 epsilon_soft: 1.0
 # kappa corresponds to the kappa parameter in ramdp. Set to 0 for vanilla DQN.
 kappa: 0.003
-# frequency that baseline is updated in the online_spibb algorithm
-baseline_update_freq: 0
 
 # Parameters of the environment set to the ones used in the experiment
 domain: 'helicopter'
@@ -31,6 +29,7 @@ helicopter_noise: 0.025
 helicopter_noise_v: 0.05
 noise_factor: 1
 helicopter_log: False
+count_param: 0.2
 
 num_experiments: 1
 num_epochs: 20
